@@ -1,0 +1,41 @@
+### Use VS Code REST Client or translate requests to curl. IDs assume an empty database.
+@base = http://localhost:8000/api/v1
+
+### Create user; repeat with Rahul and Ankit
+POST {{base}}/users
+Content-Type: application/json
+
+{"name":"Mohit"}
+
+### Create group
+POST {{base}}/groups
+Content-Type: application/json
+
+{"name":"Goa Trip"}
+
+### Add each of user IDs 1, 2, 3
+PUT {{base}}/groups/1/members/1
+
+### Record equal expense; split_type defaults to equal
+POST {{base}}/groups/1/expenses
+Content-Type: application/json
+
+{"paid_by":1,"amount":"1200.00","description":"Dinner"}
+
+### Direct balances
+GET {{base}}/groups/1/balances
+
+### Minimum-payment plan for a small group
+GET {{base}}/groups/1/settlement-suggestions
+
+### Personal consumption and cash flow
+GET {{base}}/users/1/analytics
+
+### Search entities and features
+GET {{base}}/search?q=Goa
+
+### Record an external payment
+POST {{base}}/groups/1/settlements
+Content-Type: application/json
+
+{"from_user_id":2,"to_user_id":1,"amount":"400.00","mode":"direct","note":"Received via UPI"}

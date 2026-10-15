@@ -1,279 +1,168 @@
 # Code flow map
 
-**Design only: every application filename/function below is proposed. None exists yet.** This file is the intended detailed implementation map. After implementation, keep it synchronized with actual paths, signatures, callers/callees, transaction boundaries, and failure behavior. Do not describe planned functions as runtime evidence.
+This maps the implemented code. Names/paths below are actual references. Keep it synchronized with decisions.md when behavior changes.
 
-## Planned layout and responsibility
+## Module map
 
-```text
-app/
-  main.py                    create_app(), app = create_app()
-  config.py                  Settings, get_settings()
-  db.py                      engine/session factory, get_session()
-  errors.py                  domain errors + HTTP exception handlers
-  models.py                  six SQLAlchemy table mappings
-  schemas/                   request/response models by feature
-  api/                       users/groups/expenses/balances/settlements/search/analytics/categories
-  services/                  feature operations and write transactions
-  queries/                   feature-specific SQLAlchemy selects/aggregates
-  domain/
-    money.py                 to_minor(), format_money()
-    splits.py                equal_shares(), validate_custom_shares()
-    balances.py              direct_balances(), net_positions()
-    settlements.py           suggest_transfers(), exact_partition(), greedy_transfers(), validate_settlement()
-    categories.py            classify_description(), category rules/version
-    search.py                feature directory and ranking helpers
-migrations/                  Alembic environment and versioned migrations
-tests/
-  unit/                      pure money/split/balance/category/plan tests
-  integration/               API + real PostgreSQL constraints/transactions
-scripts/seed_demo.py          explicit repeatable synthetic seed command
-```
+| Module | Responsibility |
+| --- | --- |
+| app/main.py | create_app(), global app, all HTTP handlers, health routes |
+| app/config.py | Settings, cached get_settings(); environment/.env configuration |
+| app/db.py | session_factory(), get_session(); request session lifecycle |
+| app/errors.py | DomainError, envelope(), register_handlers() |
+| app/models.py | Base, User, Group, Member, Expense, Share, Settlement, utcnow() |
+| app/schemas.py | Strict input shapes, default_equal(), typed output/Page models |
+| app/services.py | Transactions, group locking, CRUD, history, ledger/balances, settlements |
+| app/search.py | Entity SQL, feature directory, ranking, scope, merged pagination |
+| app/reporting.py | summarize(), breakdown(), consumption/cash-flow reports |
+| app/domain/money.py | to_minor(), format_money(); exact paise conversion |
+| app/domain/splits.py | equal_shares(), validate_custom_shares() |
+| app/domain/balances.py | Transfer, direct_balances(), net_positions() |
+| app/domain/settlements.py | Plan, exact_partition(), greedy_transfers(), suggest_transfers(), validate_settlement() |
+| app/domain/categories.py | Classification, classify_description(), versioned keyword/phrase rules |
+| migrations/env.py | Online/offline Alembic environment |
+| migrations/versions/0001_initial.py | Explicit upgrade()/downgrade() schema operations |
+| scripts/seed_demo.py | seed(); atomic repeatable synthetic data |
+| scripts/benchmark_settlements.py | benchmark(); separate timing and memory measurements |
+| scripts/smoke_http.py | smoke(base); assignment scenario against a real HTTP server |
 
-Modules are grouped by responsibility without a generic repository base class. Schema modules distinguish equal/custom input using split_type. Update this map if implementation chooses fewer modules; the map must follow the code, not force empty layers.
+Domain functions do not import FastAPI, ORM models, or database sessions. Queries live with feature operations; there are no unused repository/query/router layers.
 
-## Startup and request entry points
+## Startup and sessions
 
 ```text
-Docker Compose starts PostgreSQL -> database health check
-  -> migration step: alembic upgrade head -> schema at current revision
-  -> Uvicorn loads app.main:app
-     -> module calls create_app()
-        -> get_settings() validates configuration
-        -> configure engine/session factory
-        -> register error handlers
-        -> register /api/v1 routers and health routes
+docker compose up --build
+  db -> pg_isready
+  migrate -> alembic upgrade head
+    migrations/env.py -> database URL -> engine -> revision 0001.upgrade()
+  api -> uvicorn app.main:app
+    app = create_app()
+      supplied Settings or get_settings()
+      session_factory() -> lazy engine + sessionmaker(expire_on_commit=False)
+      register_handlers() -> include /api/v1 router -> health routes
 ```
 
-Do not run ad hoc schema creation on each API request or auto-migrate independently in every worker. Liveness needs no DB query; readiness checks database connectivity. Shutdown disposes the engine.
+Startup does not create tables or run migrations independently per API worker. Engine connections use pre-ping and a five-second connection timeout. Lifespan shutdown disposes the engine. Liveness requires no DB; readiness runs SELECT 1 and maps database errors to 503. Readiness tests connectivity, not schema revision.
 
-Each route obtains `Session` from `get_session()`; dependency cleanup closes it. The dependency does not independently commit. Routers parse/serialize; services enforce business rules. Domain errors propagate to centralized handlers, which map them to the documented HTTP envelope. Write services use one transaction context; failure rolls back all writes.
+`get_session(request)` yields one Session and closes it afterward. Closing rolls back uncommitted reads and releases locks. Mutating service functions own `with session.begin()` boundaries, committing success and rolling back exceptions. Dependencies never auto-commit. Write routes do not query first and accidentally open another transaction before calling a write service.
 
-## User creation and listing
+## Validation and errors
+
+FastAPI validates parameters/Pydantic bodies before calling handlers. Input forbids unknown keys; text is trimmed/nonblank; body IDs are strict positive integers. Decimal amounts must be finite, at most two meaningful decimal places, and <= INR 10,000,000. Expenses/settlements require positive amounts; custom shares may be zero. Timestamps require a timezone offset; GroupCreate validates an IANA timezone. ErrorRead/ErrorContent describe the common error envelope in OpenAPI; membership creation also documents its 201 alternative.
+
+`schemas.default_equal()` adds split_type=equal before discriminated union validation. EqualExpense forbids a splits field; CustomExpense requires a nonempty Split list. `DomainError` becomes the common error envelope. RequestValidationError -> 422 with sanitized locations/messages; HTTPException -> same envelope; IntegrityError -> generic 409 without SQL/connection details. Missing resources -> 404; invalid custom split shape/total -> 422; invalid current membership/payment state -> 409. Transaction rollback occurs before error formatting.
+
+## Users, groups, and membership
+
+| Handler in main.py | Calls/behavior |
+| --- | --- |
+| create_user | services.create_user -> transaction -> User insert/flush -> commit -> UserRead |
+| list_users | escaped case-insensitive name filter -> services.page -> count + ordered slice |
+| get_user | services.require_user -> session.get(User) -> 404 if missing |
+| create_group | services.create_group -> transaction -> Group insert/flush -> group_dict -> commit |
+| list_groups | optional user existence/membership/name filters -> group_page -> count/slice + batched member counts |
+| get_group | require_group -> group_dict with member count |
+| add_member | services.add_member -> transaction -> require_group(lock=True) -> require_user -> existing membership or insert -> commit; 200 existing/201 new |
+| list_members | require_group -> count + ordered Member/User join -> MemberRead page |
+
+`require_group(lock=True)` selects FOR UPDATE. All group financial/category writes and membership additions acquire this lock before reading state. Duplicate membership additions remain idempotent under concurrency. Names may duplicate; IDs distinguish entities.
+
+## Expense creation
 
 ```text
-POST /users -> users_router.create_user(payload, session)
-  -> UserCreate validates trimmed nonblank name and length
-  -> users_service.create_user(session, payload)
-     -> transaction -> insert User -> flush to obtain ID -> commit
-  -> UserRead -> 201
-
-GET /users -> users_router.list_users(filters, session)
-  -> users_queries.list_users(q, limit, offset)
-     -> parameterized name predicate + stable order + count
-  -> Page[UserRead] -> 200
+main.create_expense -> services.create_expense
+  transaction:
+    require_group(lock=True)
+    member_labels() -> complete current membership, sorted by ID
+    require payer in nonempty group
+    to_minor(amount)
+    equal_shares() OR validate_custom_shares(converted shares)
+    explicit category? Classification(manual) : classify_description()
+    insert Expense -> flush ID
+    insert all Share rows, including payer/zero shares -> flush
+    expense_dict() -> labels/shares/formatted money
+  commit -> ExpenseRead, 201
 ```
 
-Duplicate names are permitted. GET user detail queries by ID and maps missing user to 404.
+`equal_shares()` uses quotient/remainder in paise; ascending IDs receive remainder paise. `validate_custom_shares()` rejects duplicates, missing/outsider IDs, negatives, and an incorrect total. Inserts are atomic. Historical shares never change with future membership. Backdated events use recording-time membership. Payer consumption is stored but does not become self-debt.
 
-## Groups and membership
+`classify_description()` normalizes Unicode/case/punctuation, matches phrase rules first, then whole-word keywords. Unique matches return category/rule ID; ambiguity or unknown descriptions return other/fallback. Manual input bypasses classification. GET does not reclassify stored expenses.
+
+## History and category correction
+
+- `list_expenses` -> require_group(read=True) -> group/payer/category/description/date filters -> expense_page -> page count/slice -> batch member labels and shares -> expense_dict with supplied context, avoiding per-expense lookups.
+- `get_expense` -> shared group lock -> require_expense checks group AND expense IDs -> expense_dict with payer and saved shares.
+- `correct_category` -> service transaction -> exclusive group lock -> require matching expense -> category/source=manual/rule=null -> flush/serialize -> commit.
+
+`date_bounds()` converts local inclusive from / exclusive to dates to UTC using the group's timezone; invalid intervals return 422. `filter_dates()` applies SQL bounds. No financial edit/delete endpoint exists.
+
+## Ledger and balances
 
 ```text
-POST /groups -> groups_router.create_group()
-  -> GroupCreate -> groups_service.create_group()
-     -> transaction -> insert Group(INR, timezone) -> commit
-  -> GroupRead -> 201
-
-PUT /groups/{group_id}/members/{user_id}
-  -> groups_router.add_member()
-  -> groups_service.add_member(session, group_id, user_id)
-     -> transaction
-     -> groups_queries.lock_group(group_id) [SELECT FOR UPDATE; 404 if absent]
-     -> users_queries.require_user(user_id) [404 if absent]
-     -> groups_queries.find_membership(group_id, user_id)
-     -> if present return existing membership; otherwise insert -> commit
-  -> MemberRead -> 200 existing / 201 new
+main.group_balances -> services.get_balances -> balance_data
+  require_group(read=True) [FOR SHARE]
+  member_labels()
+  load_ledger() [one UNION ALL statement]
+    Expense JOIN Share excluding payer share -> obligation Transfer rows
+    Settlement -> recorded payment Transfer rows
+  net_positions() + direct_balances()
+  transfer_dict() / formatted positions -> BalanceRead
 ```
 
-Lock-before-read makes concurrent additions and expense member snapshots consistent. Group/member listing uses paginated queries. Group detail uses a count aggregate, avoiding one member lookup per result.
+Shared locks keep membership/labels/financial records consistent through request completion, allowing other readers. The single ledger statement observes shares and settlements at one READ COMMITTED snapshot. Net positions subtract debtor obligations/add creditor obligations; settlements credit sender/debit receiver. Net total remains zero.
 
-## Expense creation: equal and custom
+`direct_balances()` aggregates sorted user pairs, nets reciprocal obligations, subtracts settlements, reverses negative edges, and omits zero/self edges. Simplified transfers can leave historical zero-net cycles. `is_settled` uses net positions; direct reads explain any residual cycle. Preview and recording request no further payments for a net-settled group.
+
+`main.user_balances()` -> require_user -> sorted membership group IDs -> get_balances per group -> retain only requested user's positions/direct edges. No cross-group netting is introduced.
+
+## Settlement planner and exact DP
 
 ```text
-POST /groups/{group_id}/expenses
-  -> expenses_router.create_expense(group_id, discriminated_payload, session)
-     -> Pydantic: finite positive Decimal, precision, text length, split shape
-     -> expenses_service.create_expense(session, group_id, payload)
-        -> money.to_minor(payload.amount) [exact conversion, no float arithmetic]
-        -> transaction
-        -> groups_queries.lock_group(group_id)
-        -> groups_queries.list_all_member_ids(group_id) [complete snapshot, not paginated]
-        -> require nonempty members and payer membership
-        -> equal mode: splits.equal_shares(amount_minor, sorted_member_ids)
-        -> custom mode: splits.validate_custom_shares(member_ids, supplied_shares)
-        -> verify all shares >= 0 and sum == amount_minor
-        -> category explicit? choose manual
-           otherwise categories.classify_description(description)
-        -> insert Expense -> flush ID
-        -> insert all ExpenseShare rows, including payer share
-        -> flush constraints -> construct response -> commit
-     -> ExpenseRead using money.format_money() -> 201
+main.settlement_suggestions -> services.preview_settlements -> balance_data
+  direct mode: direct edges (empty if net-settled), strategy=direct,
+               objective=preserve_original_debts, guarantee=false
+  simplified: suggest_transfers(positions, configured threshold)
+    require sum==0 and threshold in 0..16; discard zero positions
+    active count <= threshold:
+      exact_partition() -> greedy_transfers() per reconstructed subset
+      strategy=exact, guarantee=true
+    otherwise greedy_transfers(all active): strategy=greedy, guarantee=false
+  transfer_dict() -> labels + amounts
+  PlanRead: mode, strategy, objective, guarantee, count, transfers, explanation
 ```
 
-Custom validation converts every supplied share using the same exact money helper, checks unique member IDs, requires complete membership coverage, and checks exact total. Equal mode rejects a splits array. Category classification is pure and makes no network requests. If any insert fails, no partial expense survives. New members added later do not change saved shares.
+`exact_partition()` sorts IDs and precomputes sums for each bitmask. For each nonempty mask choose removal bit i maximizing best[mask without i], breaking ties by ID; add one if sum[mask]==0 and save parent. Follow parents, reverse removed IDs, and close subsets at zero running sums. This maximizes zero-sum prefix closures over all orderings, equivalently the maximum number k of disjoint zero-sum blocks. With n nonzero positions, minimum transfers is n-k. Time O(n*2^n), space O(2^n).
 
-## Expense history and category correction
+`greedy_transfers()` uses negative-sized creditor/debtor heaps with ID tiebreakers, emits min(debt,credit), and reinserts leftovers. It changes only local heaps. Within a maximum zero-sum partition it reaches n-k total transfers; as a global fallback it offers <=n-1 transfers without a minimum-count guarantee. The empty plan is exact. Callers cannot force exact computation above the server's bound.
 
-```text
-GET /groups/{group_id}/expenses
-  -> require_group -> validate filters/time range
-  -> expenses_queries.list_expenses(group_id, filters, page)
-     -> join/load payer without per-row lookup
-     -> order occurred_at DESC, id DESC; separate count
-  -> page response
+## Settlement recording/history
 
-GET /groups/{group_id}/expenses/{expense_id}
-  -> expenses_queries.require_expense(group_id AND expense_id)
-  -> load saved shares and user labels -> detail response
+`main.record_settlement()` -> service transaction -> exclusive group lock -> member_labels -> load_ledger -> net_positions/direct_balances -> reject net-settled group -> to_minor -> validate_settlement -> insert/flush Settlement -> settlement_dict -> commit -> 201.
 
-PATCH /groups/{group_id}/expenses/{expense_id}/category
-  -> validate supported category
-  -> transaction -> lock group -> require matching expense
-  -> update category, source=manual, rule=null -> commit -> response
-```
-
-No general expense PATCH means monetary history cannot be accidentally rewritten. Group scoping is checked in the query, not only in route syntax.
-
-## Balance reads
-
-```text
-GET /groups/{group_id}/balances?view=direct|net
-  -> balances_router.get_balances()
-  -> balances_service.get_group_balances(session, group_id, view)
-     -> require_group
-     -> balances_queries.load_group_ledger(group_id)
-        [one statement/CTE or equivalent consistent ledger snapshot]
-     -> domain.balances.net_positions(expenses, shares, settlements)
-     -> domain.balances.direct_balances(expenses, shares, settlements) if direct requested
-     -> format amounts and user labels; is_settled = all net positions zero
-  -> response
-```
-
-Ledger loading must produce a consistent read of expense and settlement records; avoid separate default READ COMMITTED queries observing different financial states. The simplest planned implementation reads a combined event projection in one SQL statement. Group writes are serialized, but ordinary reads still need this consistent snapshot design.
-
-`direct_balances()` adds every nonpayer share as participant -> payer; settlements subtract sender -> receiver; reciprocal edges cancel. Negative pair totals reverse direction; zero edges disappear. A simplified payment can therefore produce a zero-net historical cycle. `is_settled` always uses net positions. Direct response includes an explanation flag/message when pairwise edges remain but the group is net-settled.
-
-`net_positions()` credits paid expenses, debits personal shares, credits settlements sent, and debits settlements received. Include zero-position members in the net view. Assert/test conservation rather than rounding a discrepancy away. User-level balances reuse the same logic per group and do not invent cross-group obligations.
-
-## Settlement suggestions
-
-```text
-GET /groups/{group_id}/settlement-suggestions?mode=simplified
-  -> settlement_service.preview()
-     -> balances_queries.load_group_ledger()
-     -> net_positions()
-     -> domain.settlements.suggest_transfers(copy_of_positions)
-        -> remove zero positions; sort by user ID; require total == 0
-        -> n <= exact threshold (initially 16)?
-           yes: exact_partition(positions)
-                -> subset sums + maximum-zero-sum-partition DP
-                -> reconstruct disjoint zero-sum subsets
-                -> greedy_transfers() within each reconstructed subset
-                -> strategy=exact, optimality_guaranteed=true
-           no:  greedy_transfers(all nonzero positions)
-                -> strategy=greedy, optimality_guaranteed=false
-        -> return transfers + strategy + objective=minimum_transactions
-     -> batch user labels; transaction_count=len(transfers)
-     -> return advisory transfers + metadata + currency + mode + explanation
-```
-
-Direct mode returns nonzero direct debt edges as transfers, with strategy=direct, objective=preserve_original_debts, and optimality_guaranteed=false. It may take more payments and preserves original creditor relationships. Both previews are reads and never insert settlements. Amount conservation and no-self-payment hold in both modes. Exact simplified results minimize payment count across unrestricted member-to-member settlements; neither direct mode nor the greedy fallback claims that guarantee. Zero-net historical cycles retain the balance view's explanation rather than being labelled new required payments.
-
-### Exact partition internals and reconstruction
-
-For sorted nonzero positions b[0..n-1], represent a subset as a bitmask. Precompute sum[mask] by removing its least significant set bit and adding that position. Use integer paise throughout.
-
-```text
-best[0] = 0
-for each nonempty mask in increasing numeric order:
-    choose i in mask maximizing best[mask without i]
-    break ties by smallest user ID; save i as parent[mask]
-    best[mask] = best[mask without i] + (1 if sum[mask] == 0 else 0)
-
-follow parent from full mask to zero; reverse the removed-ID sequence
-walk that order, accumulating a running sum
-each time running sum reaches zero, close one reconstructed subset
-```
-
-The recurrence maximizes zero-sum prefix closures over all member orderings. Every partition into zero-sum subsets can be arranged as consecutive blocks in an ordering, so the optimum closure count is the maximum zero-sum partition count k. With n nonzero positions, a settlement's connected components must each have total zero and a component of m members needs at least m-1 transfers. This gives the lower bound n-k; settling each reconstructed subset reaches it. The DP takes O(n * 2^n) time and O(2^n) space, including reconstruction parents and subset sums.
-
-`greedy_transfers()` constructs debtor/creditor heaps with stable user-ID tiebreakers, emits min(debt, credit), and reinserts nonzero leftovers. Use copies so planning never mutates the ledger. Within a maximum zero-sum partition it produces exactly n-k transfers in total; across the whole group alone it has no minimum-count guarantee.
-
-The threshold counts nonzero positions and is server-controlled, initially 16. Benchmark latency and peak memory before fixing the final cutoff; callers cannot force a larger exact search. An all-zero ledger returns an exact empty plan with count=0 and guarantee=true. A completed exact plan must be reconstructed before returning guarantee=true; never label an interrupted search or heuristic result exact. Mode controls payment semantics; strategy describes the selected planning algorithm and is not accepted as an override in settlement POSTs.
-
-## Recording settlements
-
-```text
-POST /groups/{group_id}/settlements
-  -> settlements_router.record_settlement()
-  -> SettlementCreate validates positive exact money, IDs, mode
-  -> settlements_service.record_settlement()
-     -> transaction
-     -> groups_queries.lock_group(group_id)
-     -> require distinct members of this group
-     -> balances_queries.load_group_ledger(group_id)
-     -> net_positions() and/or direct_balances()
-     -> validate_settlement(mode, sender, receiver, amount, current_ledger)
-        direct: amount <= direct debt to receiver
-        simplified: sender owes net, receiver is owed net, amount <= both magnitudes
-     -> insert Settlement including mode and optional external-payment note
-     -> flush -> commit
-  -> SettlementRead -> 201
-```
-
-Never trust an earlier preview as an authorization to exceed current debt. A state conflict returns 409; rollback leaves the ledger unchanged. Holding the group lock until commit ensures a second concurrent settlement recalculates after the first. No external payment API is called. List settlements uses the history filtering/pagination pattern.
+Validation requires positive payment between distinct members. Direct cap is outstanding pairwise debt. Simplified cap is min(sender's net debt, receiver's net credit), with the required signs. Earlier previews are never treated as current validation state. Concurrent requests serialize on the group lock, so the second reads newly committed debt. This records external payments; it executes no cash/bank/UPI operation. `list_settlements()` uses a shared lock, date filters, page(), batched labels, and settlement_dict(labels=...).
 
 ## Search
 
-```text
-GET /search?q=...&types=groups,expenses,features&user_id=...&group_id=...
-  -> search_router.search() -> validated bounded query and page
-  -> search_service.search()
-     -> resolve optional scope intersection, return 404 for nonexistent IDs
-     -> search_queries.search_entities() [parameterized escaped predicates]
-        -> typed UNION projection + SQL match rank + stable global order/page
-     -> domain.search.match_features() if requested
-     -> combine feature/entity candidates and apply consistent global ranking/page
-     -> return typed hits and total
-```
+`main.search()` -> search.search -> validate query length 1..100/types/offset<=1000 -> require scope IDs -> intersect user groups/group filter -> entity_query/rank -> parameterized UNION ALL users/groups/expenses -> count + top offset+limit entity candidates. Rank is exact, prefix, substring, then type/ID. Wildcards %/_ are escaped literals.
 
-Implement global pagination correctly: feature hits are a small finite set; fetch the top `offset + limit` ranked entity candidates, merge with all matching features, then slice the combined result. Entity count plus feature count supplies total. Cap offset at 1000 and trimmed query length at 1-100 characters for this initial algorithm. Scope restrictions apply in SQL before ranking. There is no per-type unlimited result fetch. Features expose API path templates such as `/api/v1/groups/{group_id}/settlement-suggestions`.
+The finite FEATURES directory is matched in Python. Merge all feature hits with capped SQL candidates, sort consistently, slice one global page, and remove internal rank fields. Entity IDs return integers; feature keys remain strings; paths are API templates. User scope includes self/group peers; explicit group scope intersects it. Scope filters are not authentication.
 
-## Category classification
+## Analytics and categories
 
-```text
-classify_description(text)
-  -> Unicode/case/punctuation normalization
-  -> phrase rules, then whole-word keyword rules
-  -> collect candidate categories and matched rule IDs
-  -> apply explicit phrase precedence
-  -> choose unique resolved category, otherwise other
-  -> return category + source + rule/version/explanation
-```
+`main.user_analytics()` / `group_analytics()` -> reporting.summarize -> require IDs/user-group intersection -> shared locks in ascending group-ID order -> validate timezone/date_bounds -> filtered Expense/Settlement queries -> relevant Share rows -> Python aggregation.
 
-Manual input bypasses classification. Category reads simply return the stored assignment. Rule changes affect new records only, unless a future explicit reclassification operation is added.
+User consumption sums own saved shares; paid sums own expense payments. Group spending counts each expense once; member breakdown sums shares. Categories/local calendar months/groups group consumption. Settlement cash flows are separate; cash outflow=paid+sent-received. Pre-join expenses do not become personal zero-value drill-down entries. breakdown() formats amounts/percentages with a zero-total rule. Largest expenses is top five. Lifetime balances stay at their own endpoint.
 
-## Analytics
+Report memory is proportional to selected history and locks last until session close; SQL aggregation/snapshot reporting is the documented larger-scale alternative. `/categories` returns category/rule metadata without database access.
 
-```text
-GET /users/{user_id}/analytics or /groups/{group_id}/analytics
-  -> analytics_router -> validate entity, dates, timezone and bucket
-  -> analytics_service.summarize()
-     -> normalize local date interval to [UTC start, UTC end)
-     -> analytics_queries.aggregate_share_spend() [personal consumption]
-     -> analytics_queries.aggregate_paid_expenses() [expense once per payer]
-     -> analytics_queries.aggregate_settlement_flows() [cash flow only]
-     -> category/month/group breakdowns and totals
-     -> compute percentages using exact money then display precision
-     -> if current position included, obtain lifetime ledger separately and label it
-  -> AnalyticsRead with currency, timezone, filters and metric definitions
-```
+## Seed, verification, and CI
 
-Prefer a single aggregate query with CTEs or a consistent read-only snapshot transaction for related summary queries so concurrent writes cannot produce mismatched totals. Do not join expense totals through shares and then sum repeated expense amounts. Personal shares follow expense occurred_at; cash settlements follow settlement occurred_at. Empty intervals return zero totals and empty breakdowns. Every drill-down reuses the same filter semantics.
+`seed_demo.seed()` -> engine/session factory -> transaction + PostgreSQL advisory lock -> existing demo group? return same ID -> otherwise insert users/group/members, three categorized expenses, and exact shares -> commit -> dispose engine. Module entry prints IDs. This avoids duplicates and partial seeds.
 
-## Verification and documentation upkeep
+`benchmark()` generates three seeded cases each for 8/12/16/17 nonzero positions, times complete planning without tracing, and measures peak traced memory separately. It writes ignored benchmark-results.json; measurements are samples, not a worst-case bound.
 
-Unit tests call domain helpers directly. Integration tests initialize an isolated PostgreSQL database using migrations, override session configuration, call routes with TestClient, and assert status/body plus persisted effects. Concurrency tests use separate sessions/connections and coordinated settlement attempts, not one sequential client masquerading as concurrent writes.
+`smoke_http.smoke(base)` uses standard-library urllib/json to issue real network requests: health/OpenAPI -> users -> group -> members -> equal dinner -> direct balances -> personal analytics -> exact plan -> record each transfer -> verify settled -> search. It returns a compact result and leaves synthetic records for inspection. The module accepts --base-url so Docker and local servers can both be verified.
 
-Optimizer tests compare exact plan counts with an independent exhaustive settlement oracle on tiny instances, not a second copy of the subset-DP recurrence. Cover the debts [900, 800, 400] / credits [800, 700, 600] counterexample (greedy five, exact four), repeated values, independent zero-sum subsets, multiple optima, all-zero groups, 16/17 nonzero-position routing, and large groups with only a few nonzero positions. Assert deterministic transfers, exact conservation, zero final positions, no self-payments, no input mutation, and accurate API metadata. A greedy result that happens to be optimal still reports guarantee=false. Benchmark the threshold separately from functional tests; record measured results and any cutoff adjustment in decisions.md when runtime implementation exists.
+Unit tests call domain helpers and input schemas. The tiny independent optimizer oracle recursively explores transfers, not the DP recurrence. `tests/conftest.py` requires a PostgreSQL test database ending in _test, creates a random schema, migrates it, builds create_app(Settings(...)), and runs TestClient requests. Cleanup disposes engines and drops only the generated schema. Concurrent settlement tests use separate connections/barriers. Migration tests compare models and execute downgrade/re-upgrade.
 
-For each implemented endpoint, replace this proposal with actual paths/function names, add callers/callees and tests, document transaction ownership, and record material deviations in decisions.md. Before submission verify startup, migrations, seed, OpenAPI examples, Docker commands, and the full assignment scenario end-to-end.
+CI installs locked Python 3.12 dependencies, runs Ruff and the full suite against PostgreSQL, validates Compose, and builds Docker. Local results/limits are recorded in docs/verification.md; remote execution awaits GitHub publishing.

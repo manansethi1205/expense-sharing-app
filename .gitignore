@@ -2,6 +2,11 @@
 __pycache__/
 *.py[cod]
 .venv/
+.python/
+.cache/
+.tools/
+.test-data/
+benchmark-results.json
 venv/
 .pytest_cache/
 .ruff_cache/

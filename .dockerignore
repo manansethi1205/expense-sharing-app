@@ -1,0 +1,15 @@
+.git
+.venv
+.python
+.cache
+.tools
+.test-data
+.pytest_cache
+.ruff_cache
+__pycache__
+.env
+.env.*
+!.env.example
+tests
+uv.lock
+benchmark-results.json

@@ -1,16 +1,16 @@
 # Expense Sharing App
 
-FastAPI expense-sharing backend planned with exact monetary accounting, searchable history, explainable spending analytics, and settlement suggestions.
+FastAPI expense-sharing backend with exact monetary accounting, searchable history, explainable spending analytics, and bounded optimal settlement suggestions.
 
-**Status: design phase. Application code has deliberately not been built.** The architecture below is a design, not an implemented feature list. FastAPI and a public GitHub repository named `expense-sharing-app` are requested choices. The hybrid exact/greedy settlement design has been accepted; the other technical choices remain proposals.
+**Status: implemented and verified.** The backend, migrations, demo seed, unit/integration tests, Docker configuration, and CI workflow are included. On Windows/Python 3.13/PostgreSQL 17.11, **51 tests passed**, including migration/model comparison and upgrade/downgrade. The Docker image built successfully, Compose migrations and health checks passed, and the live assignment scenario passed on Linux/Python 3.12/PostgreSQL 17.11. The GitHub remote and remote CI run still require connected GitHub access. See [verification details](docs/verification.md).
 
 ## Assignment scope
 
-The planned submission covers users, groups, membership, equal shared expenses, history, structured balances, search, spending analytics, category suggestions, settlement suggestions, recorded settlements, custom splits, tests, and Docker support.
+The implementation covers users, groups, membership, equal shared expenses, history, structured balances, search, spending analytics, category suggestions, settlement suggestions, recorded settlements, custom splits, tests, and Docker support.
 
 Search is the nominated mandatory product enhancement. Analytics and settlement suggestions are additional enhancements. Custom splits, settlements, tests, and Docker cover every optional bonus in the assignment.
 
-## Recommended stack
+## Stack
 
 | Component | Choice | Reason / cost |
 | --- | --- | --- |
@@ -21,14 +21,14 @@ Search is the nominated mandatory product enhancement. Analytics and settlement 
 | Driver | Psycopg 3 | PostgreSQL driver; binary installation variant for a quick local setup |
 | Migrations | Alembic | Reviewable, reproducible database changes |
 | Server | Uvicorn | ASGI server for FastAPI |
-| Tests | pytest + HTTPX / FastAPI TestClient | Pure accounting tests plus API/database integration tests |
+| Tests | pytest + HTTPX2 / FastAPI TestClient | Pure accounting tests plus API/database integration tests; supported by the installed Starlette TestClient |
 | Tooling | Ruff | One formatter/linter, minimal configuration |
-| Packaging | pyproject.toml + a generated, pinned dependency lock/export | Reproducible runtime and development installs |
+| Packaging | uv + pyproject.toml + uv.lock + requirements.txt | Locked development environment and hashed runtime export |
 | Delivery | Dockerfile + Docker Compose | API and PostgreSQL; persistent database volume |
 
-Choose concrete compatible versions and generate the dependency lock when implementation starts. No dependencies have been installed or version-tested yet.
+Python 3.12+ is required. Exact dependency versions are recorded in `uv.lock`; `requirements.txt` is the hashed runtime-only export used by Docker. Key installed versions: FastAPI 0.143.2, SQLAlchemy 2.0.54, Pydantic 2.14.1, Psycopg 3.3.6, Alembic 1.20.0, and HTTPX2 2.13.1 (development only). Runtime dependencies also include tzdata so IANA timezone handling works on Windows.
 
-FastAPI documents its OpenAPI and interactive documentation support in its [official features guide](https://fastapi.tiangolo.com/features/). SQLAlchemy documents the [transaction context](https://docs.sqlalchemy.org/en/20/orm/session_transaction.html) used by the proposed service layer; Alembic provides [schema migrations](https://alembic.sqlalchemy.org/en/latest/).
+FastAPI documents its OpenAPI and interactive documentation support in its [official features guide](https://fastapi.tiangolo.com/features/). SQLAlchemy documents the [transaction context](https://docs.sqlalchemy.org/en/20/orm/session_transaction.html) used by the service layer; Alembic provides [schema migrations](https://alembic.sqlalchemy.org/en/latest/).
 
 ### Why a relational database rather than a graph database?
 
@@ -50,11 +50,11 @@ HTTP request -> FastAPI router + Pydantic validation
 Application services -> pure money/split/balance/category/settlement functions
 ```
 
-Use ordinary synchronous route functions for synchronous database calls. One session per request; write services own commit/rollback boundaries. Pure accounting functions do not know about FastAPI or the database. Keep queries in feature modules; avoid generic repository abstractions until duplication warrants them.
+Ordinary synchronous route functions call synchronous database operations. One session per request; write services own commit/rollback boundaries. Pure accounting functions do not know about FastAPI or the database. Queries live in `services.py`, `search.py`, and `reporting.py`; no generic repository abstraction is needed at this size.
 
-No microservices, message broker, cache, external search service, or language model is necessary. See [flow.md](flow.md) for proposed modules and function-by-function flows, and [decisions.md](decisions.md) for reasons and tradeoffs.
+See [flow.md](flow.md) for actual modules, callers/callees, transaction boundaries, and error paths, and [decisions.md](decisions.md) for reasons and tradeoffs.
 
-## Proposed database design
+## Database design
 
 ```mermaid
 erDiagram
@@ -87,7 +87,7 @@ Balances are derived from expenses, saved shares, and settlements; do not mainta
 
 ## Accounting rules and assumptions
 
-1. Amount must be positive, finite, no more than two decimal places, and within a documented maximum chosen before implementation. Reject excess precision rather than silently rounding user input.
+1. Amount must be positive, finite, no more than two decimal places, and at most INR 10,000,000 per expense/settlement. Reject excess precision rather than silently rounding user input. Zero custom shares are allowed.
 2. Prefer decimal strings in JSON (`"1200.00"`). Accept the assignment's numeric JSON form through Decimal validation, without float arithmetic. Convert to integer paise once at the boundary; return monetary strings consistently.
 3. Group must exist, contain at least one member, and include the payer.
 4. Default `split_type` is `equal`. All current group members participate, including the payer. The equal endpoint accepts no participant subset or explicit shares.
@@ -125,7 +125,7 @@ Exact optimization finds the maximum number k of disjoint zero-sum subsets, then
 
 Within each reconstructed subset, or for the large-group fallback, use heaps to match the largest debtor and creditor for `min(debt, credit)`. Greedy takes O(n log n) after aggregation. Applying it inside each subset of a maximum zero-sum partition achieves the exact minimum total count; applying it to the entire group alone does not. For example, debts of 900, 800, 400 and credits of 800, 700, 600 require five payments under global largest-first greedy but only four under an optimal plan.
 
-Sort member IDs and define stable tiebreakers for DP reconstruction and heap matching, so exact plans are deterministic too. Start with a server-side exact threshold of 16, benchmark representative inputs, and lower it if latency/memory requires. There is no caller option to bypass the bound and no new optimization dependency. The exact branch must finish before advertising an optimality guarantee; an interrupted exact attempt must never be labelled optimal. Suggestions are computed on demand and never recorded automatically.
+Member IDs and explicit tiebreakers make DP reconstruction and heap matching deterministic. The server threshold defaults to 16 nonzero positions and can be lowered, never raised above 16; local sample benchmarks support this bound. There is no caller option to bypass it and no optimization dependency. The exact branch finishes before advertising an optimality guarantee. Suggestions are computed on demand and never recorded automatically.
 
 The preview response exposes `mode`, `strategy`, `objective`, `optimality_guaranteed`, `transaction_count`, and transfers. Simplified mode uses `objective: "minimum_transactions"`, strategy `exact` or `greedy`, and a guarantee true only for a completed exact result. Direct mode uses strategy `direct`, objective `preserve_original_debts`, and no global minimum-count guarantee. Keep user-selected payment mode separate from the server-selected algorithm.
 
@@ -139,8 +139,8 @@ The preview response exposes `mode`, `strategy`, `objective`, `optimality_guaran
   "optimality_guaranteed": true,
   "transaction_count": 2,
   "transfers": [
-    {"from_user_id": 2, "to_user_id": 1, "amount": "400.00"},
-    {"from_user_id": 3, "to_user_id": 1, "amount": "400.00"}
+    {"from_user": {"id": 2, "name": "Rahul"}, "to_user": {"id": 1, "name": "Mohit"}, "amount": "400.00"},
+    {"from_user": {"id": 3, "name": "Ankit"}, "to_user": {"id": 1, "name": "Mohit"}, "amount": "400.00"}
   ]
 }
 ```
@@ -151,7 +151,7 @@ Recording a settlement requires explicit `mode: "direct"` or `"simplified"`. Dir
 
 Settlement means recording a payment made outside this service (cash, UPI, bank transfer); the API does not move money or verify bank receipt. A preview is advisory; the POST revalidates against current state and returns 409 if the balance has changed incompatibly. Cross-group netting is deferred even when two users share several groups.
 
-## Proposed API
+## API
 
 All application routes use `/api/v1`. Collections return `{ "items": [...], "limit": 20, "offset": 0, "total": 3 }`; default limit 20, maximum 100; stable ordering includes ID as a tiebreaker.
 
@@ -253,7 +253,7 @@ For the dinner, Mohit **paid 1200.00** but **personally spent 400.00**. Rahul pa
 
 Include totals, category amounts/percentages, monthly series, group breakdown, and largest expenses; paginate drill-downs. Define zero-total percentages as zero. These are descriptive analytics, not forecasts or financial advice.
 
-## Tests and demo evidence planned
+## Test coverage
 
 - Assignment's 1200.00 example; reciprocal debt cancellation; several payers; self-share excluded from debts; one-member group.
 - Nonpositive/nonfinite/overprecision amounts; nonexistent group/user; nonmember payer; empty group; wrong-group resource IDs.
@@ -269,20 +269,77 @@ Include totals, category amounts/percentages, monthly series, group breakdown, a
 - Analytics distinguish paid/share/cash flow, avoid duplicate sums, and handle date boundaries/empty periods.
 - Integration tests use isolated PostgreSQL state, apply migrations, and exercise API responses and constraints; pure math tests need no database.
 
-## Planned setup and submission
+## Setup
 
-There is no runnable service, Dockerfile, dependency lock, or test suite yet. The following are intended deliverables/commands, **not currently working setup instructions**:
+### Docker
 
-1. Supply `.env.example`, validated settings, pinned dependencies, Dockerfile, and Compose configuration.
-2. `docker compose up --build`: database health check, one migration step, then API startup.
-3. Open `http://localhost:8000/docs` for interactive OpenAPI; `/redoc` and `/openapi.json` also documented.
-4. Run the documented pytest command against a separate disposable test database; never reset the developer database from tests.
-5. Supply a repeatable demo seed command for Mohit/Rahul/Ankit and representative search/analytics records.
-6. Add exact local Python setup, migration, seed, test, and Docker commands after verifying them.
+Requires Docker Desktop/Engine running with Compose v2. From the repository directory:
 
-GitHub target: public repository `expense-sharing-app`. Suggested repository description: **FastAPI expense-sharing backend with exact split accounting, searchable expenses, spending analytics, and smart settlement suggestions.** Do not claim implemented features in repository release notes until built.
+```sh
+docker compose up --build -d
+docker compose exec api python -m scripts.seed_demo
+```
 
-## Suggested 12-hour implementation budget
+Compose starts PostgreSQL, waits for its health check, runs Alembic once in the migration service, then starts the API. The database persists in the `expense-data` volume. All published ports bind to localhost. `.env` can override `API_PORT`, `DB_PORT`, and `TEST_DB_PORT` when defaults conflict with other services; update the host-side database URLs accordingly. `docker compose down` stops the services and keeps the database volume.
+
+- Interactive API docs: [Swagger UI](http://localhost:8000/docs)
+- Alternative docs: [ReDoc](http://localhost:8000/redoc)
+- Machine-readable contract: [OpenAPI JSON](http://localhost:8000/openapi.json)
+- Example requests: [docs/demo.http](docs/demo.http)
+
+For a repeatable live-HTTP check against a disposable/demo instance, run `uv run python -m scripts.smoke_http --base-url http://localhost:8000`. It creates synthetic users/group/expense records, verifies personal analytics and search, and executes the suggested settlements.
+
+Seed output supplies actual user/group IDs. Repeating the seed does not duplicate the demo; it creates three expenses covering food, travel, and accommodation. The demo seed uses one atomic transaction and a PostgreSQL advisory lock.
+
+### Local Python development
+
+Install Python 3.12+ and [uv](https://docs.astral.sh/uv/), then:
+
+```sh
+uv sync --locked
+```
+
+Copy `.env.example` to `.env` (`Copy-Item .env.example .env` in PowerShell or `cp .env.example .env` in a POSIX shell). Start PostgreSQL with `docker compose up -d --wait db`, or set `DATABASE_URL` in `.env` to an existing development PostgreSQL database. Then:
+
+```sh
+uv run alembic upgrade head
+uv run python -m scripts.seed_demo
+uv run uvicorn app.main:app --reload
+```
+
+Use either the container API or the local API on port 8000 at a time. The service does not auto-create tables at startup. `uv run alembic check` compares the current database against the models; create future migrations with `uv run alembic revision --autogenerate -m "describe change"` and review them before applying.
+
+### Tests and quality checks
+
+Pure accounting tests do not need a running database:
+
+```sh
+uv run pytest tests/unit -q
+uv run ruff check .
+uv run ruff format --check .
+```
+
+For the full suite, start the separate disposable test database and use `.env.example`'s `TEST_DATABASE_URL`:
+
+```sh
+docker compose --profile test up -d --wait test-db
+uv run --env-file .env pytest -q
+```
+
+Without `TEST_DATABASE_URL`, PostgreSQL tests are explicitly skipped. The test URL must name a PostgreSQL database ending in `_test` and differ from the app URL. Each test creates/migrates a random isolated schema and removes only that schema afterward. The test role needs CREATE SCHEMA privileges. CI runs the complete suite against its own PostgreSQL service, plus lint/format and a Docker build; the remote workflow has not been run from this workspace.
+
+Regenerate the runtime dependency export after changing dependencies:
+
+```sh
+uv export --no-dev --no-emit-project --frozen --output-file requirements.txt
+uv run python -m scripts.benchmark_settlements
+```
+
+The benchmark writes an ignored `benchmark-results.json`. The verified sample at 16 nonzero positions measured median 136 ms and 3.50 MiB traced peak memory on Windows/Python 3.13; see [verification details](docs/verification.md). This supports the current threshold without claiming a worst-case latency bound.
+
+GitHub target: public repository `expense-sharing-app`. Repository description: **FastAPI expense-sharing backend with exact split accounting, searchable expenses, spending analytics, and smart settlement suggestions.** Remote creation/push is pending GitHub access; the local repository contains the implementation.
+
+## Original 12-hour planning budget
 
 | Time | Deliverable |
 | --- | --- |
@@ -294,8 +351,10 @@ GitHub target: public repository `expense-sharing-app`. Suggested repository des
 | 8-10 h | Focused unit/integration tests, especially money and settlements |
 | 10-12 h | Docker verification, seed demo, documentation, repository polish |
 
-This is a target rather than a guarantee. Exact DP, reconstruction, independent optimality tests, and threshold benchmarking add work inside the settlement/test blocks; the original 12-hour target is now tighter. Preserve correctness and the requested bonuses before polishing analytics ranking or adding more features, and revise estimates after implementing the optimizer.
+This was a scope-planning estimate, not a report of actual elapsed implementation time. The implemented optimizer includes reconstruction, independent optimality tests, and benchmark evidence.
 
-Quick follow-ups, ordered by value: CSV export (about 30-45 minutes plus escaping/formula-injection handling), duplicate-expense warning (30-60 minutes, advisory only), group budget with remaining amount (45-60 minutes), and GitHub CI for lint/tests (30-60 minutes once Docker tests work). These estimates are tentative; none is committed to the initial 12-hour scope. Idempotent expense/settlement POSTs are valuable but need payload-bound keys and concurrency tests, so budget them separately rather than calling them a trivial header change.
+Quick follow-ups: CSV export, advisory duplicate-expense warnings, and group budgets. GitHub CI for lint/tests and Docker build is already included. Idempotent expense/settlement POSTs remain deferred: they need payload-bound keys, persistent storage, and concurrency tests rather than just a header.
+
+Current analytics aggregate date-filtered records in Python under shared group locks. This keeps metric definitions easy to inspect at demo scale but uses memory proportional to the selected history and holds locks while reporting. A larger deployment should push aggregations into SQL and use snapshot reads. Search is bounded and parameterized but uses substring scans and provides no fuzzy matching. These are deliberate assignment-scale tradeoffs.
 
 With more time: financial reversal records, authentication/group authorization, idempotency, fuzzy search, membership departure rules, receipt attachments, budgets, richer category context, and measured performance improvements. Notifications, bank integrations, OCR, multiple currencies, and exact optimization above the bounded small-group threshold are outside the initial assignment scope.
