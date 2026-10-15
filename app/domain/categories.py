@@ -3,7 +3,7 @@ import unicodedata
 from dataclasses import dataclass
 
 CATEGORIES = ("travel", "food", "accommodation", "activities", "shopping", "other")
-RULES_VERSION = "v1"
+RULES_VERSION = "v2"
 WORDS = {
     "travel": {
         "auto",
@@ -23,7 +23,16 @@ WORDS = {
     "activities": {"museum", "tour", "concert", "tickets", "kayaking", "scuba"},
     "shopping": {"shopping", "souvenirs", "clothes", "purchase"},
 }
-PHRASES = {"bike rental": "travel", "bike purchase": "shopping", "hotel dinner": "food"}
+PHRASES = {
+    "bike rental": "travel",
+    "bike purchase": "shopping",
+    "hotel dinner": "food",
+    **{
+        f"{transport} {ticket}": "travel"
+        for transport in ("bus", "flight", "train", "metro")
+        for ticket in ("ticket", "tickets")
+    },
+}
 
 
 @dataclass(frozen=True)
@@ -34,22 +43,28 @@ class Classification:
 
 
 def classify_description(description: str) -> Classification:
-    normalized = " ".join(re.findall(r"\w+", unicodedata.normalize("NFKC", description).casefold()))
-    phrase_matches = [phrase for phrase in PHRASES if f" {phrase} " in f" {normalized} "]
-    if phrase_matches:
-        categories = {PHRASES[phrase] for phrase in phrase_matches}
-        if len(categories) == 1:
-            return Classification(
-                categories.pop(),
-                "rule",
-                f"{RULES_VERSION}:phrase:{','.join(sorted(phrase_matches))}",
-            )
-        return Classification("other", "fallback", f"{RULES_VERSION}:ambiguous")
-    words = set(normalized.split())
-    matches = {category for category, keywords in WORDS.items() if words & keywords}
+    tokens = re.findall(r"\w+", unicodedata.normalize("NFKC", description).casefold())
+    used, matches = set(), set()
+    # Specific phrases consume only their own tokens, never unrelated surrounding context.
+    for phrase in sorted(PHRASES, key=lambda value: (-len(value.split()), value)):
+        parts = phrase.split()
+        for index in range(len(tokens) - len(parts) + 1):
+            positions = set(range(index, index + len(parts)))
+            if not positions & used and tokens[index : index + len(parts)] == parts:
+                used.update(positions)
+                matches.add(PHRASES[phrase])
+    words = {word for index, word in enumerate(tokens) if index not in used}
+    generic_tickets = {"ticket", "tickets"}
+    specific_words = words - generic_tickets
+    matches.update(category for category, keywords in WORDS.items() if specific_words & keywords)
+    # "tickets" alone suggests activities; it must not overrule flight/bus context.
+    if not matches and words & generic_tickets:
+        matches.add("activities")
     if len(matches) == 1:
         category = matches.pop()
-        return Classification(category, "rule", f"{RULES_VERSION}:keyword:{category}")
+        return Classification(
+            category, "rule", f"{RULES_VERSION}:{'context' if used else 'keyword'}:{category}"
+        )
     return Classification(
         "other", "fallback", f"{RULES_VERSION}:{'ambiguous' if matches else 'unknown'}"
     )

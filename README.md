@@ -2,7 +2,7 @@
 
 FastAPI expense-sharing backend with exact monetary accounting, searchable history, explainable spending analytics, and bounded optimal settlement suggestions.
 
-**Status: implemented and verified.** The backend, migrations, demo seed, unit/integration tests, Docker configuration, and CI workflow are included. On Windows/Python 3.13/PostgreSQL 17.11, **51 tests passed**, including migration/model comparison and upgrade/downgrade. The Docker image built successfully, Compose migrations and health checks passed, and the live assignment scenario passed on Linux/Python 3.12/PostgreSQL 17.11. The GitHub remote and remote CI run still require connected GitHub access. See [verification details](docs/verification.md).
+**Status: implemented and verified.** The expanded PostgreSQL suite passes **83 tests**, including audit regressions, migration safety, and concurrent snapshot reporting. Docker build/startup and the live assignment scenario pass. The public repository is [expense-sharing-app](https://github.com/manansethi1205/expense-sharing-app); its name and description match the submission. [GitHub Actions](https://github.com/manansethi1205/expense-sharing-app/actions) runs the full checks on every push. See [verification details](docs/verification.md).
 
 ## Assignment scope
 
@@ -87,7 +87,7 @@ Balances are derived from expenses, saved shares, and settlements; do not mainta
 
 ## Accounting rules and assumptions
 
-1. Amount must be positive, finite, no more than two decimal places, and at most INR 10,000,000 per expense/settlement. Reject excess precision rather than silently rounding user input. Zero custom shares are allowed.
+1. Amounts must be positive, finite, and use at most two decimal places. Expenses remain capped at INR 10,000,000 each. Settlements may aggregate many expenses, so they have a separate signed-BIGINT ceiling: INR 92,233,720,368,547,758.07 (9,223,372,036,854,775,807 paise). Every suggested payment can therefore be recorded without imposing the per-expense cap or changing the minimum-payment objective. Zero custom shares are allowed. Stored and query text reject null characters with 422.
 2. Prefer decimal strings in JSON (`"1200.00"`). Accept the assignment's numeric JSON form through Decimal validation, without float arithmetic. Convert to integer paise once at the boundary; return monetary strings consistently.
 3. Group must exist, contain at least one member, and include the payer.
 4. Default `split_type` is `equal`. All current group members participate, including the payer. The equal endpoint accepts no participant subset or explicit shares.
@@ -110,7 +110,7 @@ Across a group, all net balances must sum to zero. For Mohit's 1200.00 dinner, t
 
 Provide two explicitly labelled views:
 
-- **Direct balances:** per-member-to-payer obligations from expense shares, reduced by opposite obligations and recorded transfers. They explain original relationships. No self-edges; omit zero edges.
+- **Direct balances:** per-member-to-payer obligations from expense shares, reduced by opposite obligations and recorded transfers. They retain original relationships, including explanatory historical cycles. Actionable direct suggestions cancel directed circulation without changing net positions or introducing a new creditor; the whole suggested plan can be recorded without premature net-settled rejection.
 - **Net positions and simplified settlement plan:** group-wide positions plus proposed transfers that clear those positions. A member may pay someone who did not originally pay for their expense.
 
 Simplified settlement minimizes the number of payments using a bounded hybrid strategy. Let n be the number of members with nonzero net positions, not the total group membership:
@@ -171,7 +171,9 @@ All application routes use `/api/v1`. Collections return `{ "items": [...], "lim
 | POST / GET | `/groups/{group_id}/settlements` | Record / list payments, including partial settlements |
 | GET | `/users/{user_id}/balances` | Positions and dues grouped by group; never collapse currencies/groups |
 | GET | `/users/{user_id}/analytics` | Personal share spend, paid amounts, settlement cash flow, category/month/group breakdowns |
-| GET | `/groups/{group_id}/analytics` | Group expense totals, category/month/member breakdowns |
+| GET | `/groups/{group_id}/analytics` | Group expense totals, named category/month/member breakdowns |
+| GET | `/users/{user_id}/analytics/expenses` | Paginated personal consumption; optional group/category/date/timezone filters and amount/date sorting |
+| GET | `/groups/{group_id}/analytics/expenses` | Paginated group expense drill-down with category/date/timezone filters and amount/date sorting |
 | GET | `/search` | `q`, `types`, optional `group_id` / `user_id`; typed search results |
 | GET | `/categories` | Supported categories and classification explanation |
 | GET | `/health/live`, `/health/ready` | Process / database availability, outside `/api/v1` |
@@ -228,7 +230,7 @@ A recorded settlement uses `{ "from_user_id": 2, "to_user_id": 1, "amount": "400
 
 ### Search across data and product features
 
-Search groups by name, users by name, expenses by description/category, and a small static feature directory by labels/aliases. Searching `settle` can return the settlement feature; `Goa` can return a group and matching expenses. Feature entries contain a stable key and API path template, not invented frontend URLs. Return typed hits with IDs, display labels, match fields, and deterministic ranking (exact, prefix, substring), then ID/type tiebreakers.
+Search groups by name, users by name, expenses by description/category, and a static feature directory by labels/aliases. Multiword aliases cover user creation, membership, equal/custom splits, group reports, personal drill-downs, category correction, settlements, balances, and search itself. Searching `settle` can return the settlement feature; `Goa` can return a group and matching expenses. Feature entries contain a stable key and API path template, not invented frontend URLs. Return typed hits with IDs, display labels, match fields, and deterministic ranking (exact, prefix, substring), then ID/type tiebreakers.
 
 Start with parameterized, escaped, case-insensitive substring SQL and query length 1-100 after trimming, plus in-memory matching for the small feature directory. `%` and `_` in a query are literals, not wildcard instructions. Define combined pagination over the ranked hits rather than returning an unbounded list per type; cap search offset at 1000 to bound the initial merge algorithm. A `user_id` filter narrows data to that user's groups but is not authentication. Search the user's own user record and peers in those groups; feature hits remain global. A `group_id` filter restricts group/member/expense hits to that group. If both filters are present, intersect them.
 
@@ -238,7 +240,7 @@ At demo scale this avoids search infrastructure. For larger datasets PostgreSQL 
 
 Categories: travel, food, accommodation, activities, shopping, other. Use a versioned keyword/phrase dictionary with word boundaries and explicit precedence; normalize Unicode/case/punctuation. `auto`, `cab`, `bike`, `taxi`, `flight`, `train`, and `bus` suggest travel; dinner/restaurant suggest food; hotel/stay suggest accommodation. Explicit user choice overrides automation. If multiple different categories match without a more specific phrase resolving ambiguity, choose other and expose why; unknown descriptions also fall back to other.
 
-Store chosen category, source (`manual`, `rule`, `fallback`), and rule version/identifier with the expense. GET never silently reclassifies old records. Rules are transparent and easy to test but cannot understand ambiguous context such as bike purchase versus bike rental; manual correction handles this limitation. No paid API, model training, or unverifiable precision claim is needed.
+Store chosen category, source (`manual`, `rule`, `fallback`), and rule version/identifier with the expense. GET never silently reclassifies old records. Version v2 resolves specific phrases using only their own tokens, then checks remaining context: `bus tickets` becomes travel, `bike purchase` becomes shopping, and `hotel dinner and flight` becomes other because it describes conflicting categories. Generic tickets cannot override transport context. Context outside the dictionary still needs manual correction; no model/API dependency or accuracy claim is added. Older v1 expenses retain their saved classification.
 
 ### Analytics that do not confuse spending with paying
 
@@ -251,7 +253,7 @@ For the dinner, Mohit **paid 1200.00** but **personally spent 400.00**. Rahul pa
 - Current net balance = lifetime group position; labelled separately from a filtered period's totals.
 - Group spend = each expense counted once. Join/aggregate shares carefully to avoid multiplying expense totals by member count.
 
-Include totals, category amounts/percentages, monthly series, group breakdown, and largest expenses; paginate drill-downs. Define zero-total percentages as zero. These are descriptive analytics, not forecasts or financial advice.
+Reports return totals, labelled category/group/member breakdowns, monthly series, and five largest expenses. Each summary includes a `drilldown_path` preserving its date/timezone/group scope. Drill-downs accept `category`, `from`, `to`, `timezone`, `sort=amount_desc|date_desc`, `limit`, and `offset`; personal drill-downs also accept `group_id`. Rows contain the group and payer names, the personal/group amount being analyzed, and the original full expense amount. Zero-total percentages are zero. These are descriptive analytics, not forecasts.
 
 ## Test coverage
 
@@ -285,7 +287,8 @@ Compose starts PostgreSQL, waits for its health check, runs Alembic once in the 
 - Interactive API docs: [Swagger UI](http://localhost:8000/docs)
 - Alternative docs: [ReDoc](http://localhost:8000/redoc)
 - Machine-readable contract: [OpenAPI JSON](http://localhost:8000/openapi.json)
-- Example requests: [docs/demo.http](docs/demo.http)
+- Complete runnable Postman collection: [expense-sharing.postman_collection.json](docs/expense-sharing.postman_collection.json). Import and run in order; IDs are captured automatically, including against an already-seeded database.
+- Plain HTTP walkthrough: [docs/demo.http](docs/demo.http), with every user/member request included; its fixed IDs assume an empty database.
 
 For a repeatable live-HTTP check against a disposable/demo instance, run `uv run python -m scripts.smoke_http --base-url http://localhost:8000`. It creates synthetic users/group/expense records, verifies personal analytics and search, and executes the suggested settlements.
 
@@ -326,7 +329,7 @@ docker compose --profile test up -d --wait test-db
 uv run --env-file .env pytest -q
 ```
 
-Without `TEST_DATABASE_URL`, PostgreSQL tests are explicitly skipped. The test URL must name a PostgreSQL database ending in `_test` and differ from the app URL. Each test creates/migrates a random isolated schema and removes only that schema afterward. The test role needs CREATE SCHEMA privileges. CI runs the complete suite against its own PostgreSQL service, plus lint/format and a Docker build; the remote workflow has not been run from this workspace.
+Without `TEST_DATABASE_URL`, PostgreSQL tests are explicitly skipped. The test URL must name a PostgreSQL database ending in `_test` and differ from the app URL. Each test creates/migrates a random isolated schema and removes only that schema afterward. The test role needs CREATE SCHEMA privileges. CI runs the complete suite against its own PostgreSQL service, plus lint/format and a Docker build; the baseline remote workflow has passed, and every subsequent push runs the same checks. See the current result in GitHub Actions.
 
 Regenerate the runtime dependency export after changing dependencies:
 
@@ -337,7 +340,7 @@ uv run python -m scripts.benchmark_settlements
 
 The benchmark writes an ignored `benchmark-results.json`. The verified sample at 16 nonzero positions measured median 136 ms and 3.50 MiB traced peak memory on Windows/Python 3.13; see [verification details](docs/verification.md). This supports the current threshold without claiming a worst-case latency bound.
 
-GitHub target: public repository `expense-sharing-app`. Repository description: **FastAPI expense-sharing backend with exact split accounting, searchable expenses, spending analytics, and smart settlement suggestions.** Remote creation/push is pending GitHub access; the local repository contains the implementation.
+Public submission: [manansethi1205/expense-sharing-app](https://github.com/manansethi1205/expense-sharing-app). Repository description: **FastAPI expense-sharing backend with exact split accounting, searchable expenses, spending analytics, and smart settlement suggestions.** The repository was renamed from `expense_sharing`; origin now uses the requested name.
 
 ## Original 12-hour planning budget
 
@@ -355,6 +358,6 @@ This was a scope-planning estimate, not a report of actual elapsed implementatio
 
 Quick follow-ups: CSV export, advisory duplicate-expense warnings, and group budgets. GitHub CI for lint/tests and Docker build is already included. Idempotent expense/settlement POSTs remain deferred: they need payload-bound keys, persistent storage, and concurrency tests rather than just a header.
 
-Current analytics aggregate date-filtered records in Python under shared group locks. This keeps metric definitions easy to inspect at demo scale but uses memory proportional to the selected history and holds locks while reporting. A larger deployment should push aggregations into SQL and use snapshot reads. Search is bounded and parameterized but uses substring scans and provides no fuzzy matching. These are deliberate assignment-scale tradeoffs.
+Analytics now use SQL sums/grouping and bounded drill-down queries inside a dedicated read-only REPEATABLE READ transaction. Reports see one consistent MVCC snapshot without holding group row locks or materializing the whole expense history in application memory. Very large offset pagination and long-running reports can still benefit from cursors, statement timeouts, and measured tuning. Search remains bounded and parameterized substring matching without fuzzy search.
 
 With more time: financial reversal records, authentication/group authorization, idempotency, fuzzy search, membership departure rules, receipt attachments, budgets, richer category context, and measured performance improvements. Notifications, bank integrations, OCR, multiple currencies, and exact optimization above the bounded small-group threshold are outside the initial assignment scope.

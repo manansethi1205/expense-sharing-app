@@ -1,11 +1,23 @@
 ### Use VS Code REST Client or translate requests to curl. IDs assume an empty database.
 @base = http://localhost:8000/api/v1
 
-### Create user; repeat with Rahul and Ankit
+### Create Mohit
 POST {{base}}/users
 Content-Type: application/json
 
 {"name":"Mohit"}
+
+### Create Rahul
+POST {{base}}/users
+Content-Type: application/json
+
+{"name":"Rahul"}
+
+### Create Ankit
+POST {{base}}/users
+Content-Type: application/json
+
+{"name":"Ankit"}
 
 ### Create group
 POST {{base}}/groups
@@ -13,8 +25,14 @@ Content-Type: application/json
 
 {"name":"Goa Trip"}
 
-### Add each of user IDs 1, 2, 3
+### Add Mohit
 PUT {{base}}/groups/1/members/1
+
+### Add Rahul
+PUT {{base}}/groups/1/members/2
+
+### Add Ankit
+PUT {{base}}/groups/1/members/3
 
 ### Record equal expense; split_type defaults to equal
 POST {{base}}/groups/1/expenses
@@ -39,3 +57,21 @@ POST {{base}}/groups/1/settlements
 Content-Type: application/json
 
 {"from_user_id":2,"to_user_id":1,"amount":"400.00","mode":"direct","note":"Received via UPI"}
+
+### Record Ankit's payment
+POST {{base}}/groups/1/settlements
+Content-Type: application/json
+
+{"from_user_id":3,"to_user_id":1,"amount":"400.00","mode":"direct","note":"Received via UPI"}
+
+### Verify all balances cleared
+GET {{base}}/groups/1/balances
+
+### Unequal split bonus
+POST {{base}}/groups/1/expenses
+Content-Type: application/json
+
+{"paid_by":1,"amount":"1000.00","description":"Activities","split_type":"custom","splits":[{"user_id":1,"amount":"500.00"},{"user_id":2,"amount":"300.00"},{"user_id":3,"amount":"200.00"}]}
+
+### Paginated personal consumption
+GET {{base}}/users/1/analytics/expenses?limit=1&offset=0&sort=amount_desc

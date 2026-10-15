@@ -8,7 +8,7 @@ This maps the implemented code. Names/paths below are actual references. Keep it
 | --- | --- |
 | app/main.py | create_app(), global app, all HTTP handlers, health routes |
 | app/config.py | Settings, cached get_settings(); environment/.env configuration |
-| app/db.py | session_factory(), get_session(); request session lifecycle |
+| app/db.py | session_factory(), get_session(); normal request session; get_report_session() for read-only repeatable-read reports |
 | app/errors.py | DomainError, envelope(), register_handlers() |
 | app/models.py | Base, User, Group, Member, Expense, Share, Settlement, utcnow() |
 | app/schemas.py | Strict input shapes, default_equal(), typed output/Page models |
@@ -17,11 +17,12 @@ This maps the implemented code. Names/paths below are actual references. Keep it
 | app/reporting.py | summarize(), breakdown(), consumption/cash-flow reports |
 | app/domain/money.py | to_minor(), format_money(); exact paise conversion |
 | app/domain/splits.py | equal_shares(), validate_custom_shares() |
-| app/domain/balances.py | Transfer, direct_balances(), net_positions() |
+| app/domain/balances.py | Transfer, direct_balances(), net_positions(), remove_circulation() |
 | app/domain/settlements.py | Plan, exact_partition(), greedy_transfers(), suggest_transfers(), validate_settlement() |
 | app/domain/categories.py | Classification, classify_description(), versioned keyword/phrase rules |
 | migrations/env.py | Online/offline Alembic environment |
-| migrations/versions/0001_initial.py | Explicit upgrade()/downgrade() schema operations |
+| migrations/versions/0001_initial.py | Initial schema |
+| migrations/versions/0002_aggregate_settlement_limit.py | Remove the per-expense settlement cap; downgrade refuses incompatible existing payments |
 | scripts/seed_demo.py | seed(); atomic repeatable synthetic data |
 | scripts/benchmark_settlements.py | benchmark(); separate timing and memory measurements |
 | scripts/smoke_http.py | smoke(base); assignment scenario against a real HTTP server |
@@ -34,7 +35,7 @@ Domain functions do not import FastAPI, ORM models, or database sessions. Querie
 docker compose up --build
   db -> pg_isready
   migrate -> alembic upgrade head
-    migrations/env.py -> database URL -> engine -> revision 0001.upgrade()
+    migrations/env.py -> database URL -> engine -> revisions 0001 then 0002
   api -> uvicorn app.main:app
     app = create_app()
       supplied Settings or get_settings()
@@ -48,7 +49,7 @@ Startup does not create tables or run migrations independently per API worker. E
 
 ## Validation and errors
 
-FastAPI validates parameters/Pydantic bodies before calling handlers. Input forbids unknown keys; text is trimmed/nonblank; body IDs are strict positive integers. Decimal amounts must be finite, at most two meaningful decimal places, and <= INR 10,000,000. Expenses/settlements require positive amounts; custom shares may be zero. Timestamps require a timezone offset; GroupCreate validates an IANA timezone. ErrorRead/ErrorContent describe the common error envelope in OpenAPI; membership creation also documents its 201 alternative.
+FastAPI validates parameters/Pydantic bodies before calling handlers. Input forbids unknown keys; text is trimmed/nonblank; body IDs are strict positive integers. Decimal amounts must be finite, at most two meaningful decimal places, and use distinct bounds: INR 10,000,000 per expense, signed BIGINT capacity per settlement. Input.postgres_compatible_text() and SafeText/reject_null_text() reject null characters in stored/query text before any database call. Expenses/settlements require positive amounts; custom shares may be zero. Timestamps require a timezone offset; GroupCreate validates an IANA timezone. ErrorRead/ErrorContent describe the common error envelope in OpenAPI; membership creation also documents its 201 alternative.
 
 `schemas.default_equal()` adds split_type=equal before discriminated union validation. EqualExpense forbids a splits field; CustomExpense requires a nonempty Split list. `DomainError` becomes the common error envelope. RequestValidationError -> 422 with sanitized locations/messages; HTTPException -> same envelope; IntegrityError -> generic 409 without SQL/connection details. Missing resources -> 404; invalid custom split shape/total -> 422; invalid current membership/payment state -> 409. Transaction rollback occurs before error formatting.
 
@@ -86,7 +87,7 @@ main.create_expense -> services.create_expense
 
 `equal_shares()` uses quotient/remainder in paise; ascending IDs receive remainder paise. `validate_custom_shares()` rejects duplicates, missing/outsider IDs, negatives, and an incorrect total. Inserts are atomic. Historical shares never change with future membership. Backdated events use recording-time membership. Payer consumption is stored but does not become self-debt.
 
-`classify_description()` normalizes Unicode/case/punctuation, matches phrase rules first, then whole-word keywords. Unique matches return category/rule ID; ambiguity or unknown descriptions return other/fallback. Manual input bypasses classification. GET does not reclassify stored expenses.
+`classify_description()` v2 normalizes Unicode/case/punctuation, consumes matched phrase tokens only, and collects categories from all remaining context. Generic ticket words are weak fallback evidence, so bus/flight tickets resolve to travel. Unrelated conflicting categories yield other instead of being hidden by a phrase. Rule IDs remain bounded strings. Manual input bypasses classification; GET never reclassifies older saved rules.
 
 ## History and category correction
 
@@ -119,7 +120,7 @@ Shared locks keep membership/labels/financial records consistent through request
 
 ```text
 main.settlement_suggestions -> services.preview_settlements -> balance_data
-  direct mode: direct edges (empty if net-settled), strategy=direct,
+  direct mode: remove_circulation(direct edges), strategy=direct,
                objective=preserve_original_debts, guarantee=false
   simplified: suggest_transfers(positions, configured threshold)
     require sum==0 and threshold in 0..16; discard zero positions
@@ -135,6 +136,8 @@ main.settlement_suggestions -> services.preview_settlements -> balance_data
 
 `greedy_transfers()` uses negative-sized creditor/debtor heaps with ID tiebreakers, emits min(debt,credit), and reinserts leftovers. It changes only local heaps. Within a maximum zero-sum partition it reaches n-k total transfers; as a global fallback it offers <=n-1 transfers without a minimum-count guarantee. The empty plan is exact. Callers cannot force exact computation above the server's bound.
 
+`remove_circulation()` builds a sorted positive-edge adjacency graph, finds a directed cycle with iterative DFS, subtracts its minimum edge amount, and repeats until acyclic. Every pass removes at least one edge; deterministic ID order stabilizes the result. Net positions and existing creditor relationships are preserved. An acyclic nonempty residual cannot be zero-net, so replaying the advertised direct payments never hits the already-settled guard before completion. Historical balance edges remain unchanged. Worst-case cancellation cost is O(E*(V+E)), bounded by one edge removal per pass.
+
 ## Settlement recording/history
 
 `main.record_settlement()` -> service transaction -> exclusive group lock -> member_labels -> load_ledger -> net_positions/direct_balances -> reject net-settled group -> to_minor -> validate_settlement -> insert/flush Settlement -> settlement_dict -> commit -> 201.
@@ -145,15 +148,15 @@ Validation requires positive payment between distinct members. Direct cap is out
 
 `main.search()` -> search.search -> validate query length 1..100/types/offset<=1000 -> require scope IDs -> intersect user groups/group filter -> entity_query/rank -> parameterized UNION ALL users/groups/expenses -> count + top offset+limit entity candidates. Rank is exact, prefix, substring, then type/ID. Wildcards %/_ are escaped literals.
 
-The finite FEATURES directory is matched in Python. Merge all feature hits with capped SQL candidates, sort consistently, slice one global page, and remove internal rank fields. Entity IDs return integers; feature keys remain strings; paths are API templates. User scope includes self/group peers; explicit group scope intersects it. Scope filters are not authentication.
+The finite FEATURES directory is matched in Python, with pipe-separated multiword aliases for every exposed product capability. Merge all feature hits with capped SQL candidates, sort consistently, slice one global page, and remove internal rank fields. Entity IDs return integers; feature keys remain strings; paths are API templates. User scope includes self/group peers; explicit group scope intersects it. Scope filters are not authentication.
 
 ## Analytics and categories
 
-`main.user_analytics()` / `group_analytics()` -> reporting.summarize -> require IDs/user-group intersection -> shared locks in ascending group-ID order -> validate timezone/date_bounds -> filtered Expense/Settlement queries -> relevant Share rows -> Python aggregation.
+`main.user_analytics()` / `group_analytics()` -> ReportDB dependency `get_report_session()` -> connection isolation REPEATABLE READ -> transaction + SET TRANSACTION READ ONLY -> reporting.summarize -> report_scope() -> validate IDs/membership/timezone/date bounds -> filtered expense/spending CTEs -> SQL aggregates. The scope's first SELECT establishes the snapshot; every total/breakdown/top-five query uses the same snapshot without FOR SHARE locks.
 
-User consumption sums own saved shares; paid sums own expense payments. Group spending counts each expense once; member breakdown sums shares. Categories/local calendar months/groups group consumption. Settlement cash flows are separate; cash outflow=paid+sent-received. Pre-join expenses do not become personal zero-value drill-down entries. breakdown() formats amounts/percentages with a zero-total rule. Largest expenses is top five. Lifetime balances stay at their own endpoint.
+User consumption sums own saved shares; paid sums own expense payments. Group spending counts each expense once; member breakdown sums shares. Categories/local calendar months/groups group consumption. Settlement cash flows are separate; cash outflow=paid+sent-received. Pre-join expenses do not become personal zero-value drill-down entries. breakdown() executes aggregate key/label/amount SQL and formats percentages with a zero-total rule. Group/member names are selected through joins. expense_rows() loads a bounded ordered page with group/payer labels. Largest expenses uses amount-descending top five; drilldown_path preserves summary filters. Lifetime balances stay at their own endpoint.
 
-Report memory is proportional to selected history and locks last until session close; SQL aggregation/snapshot reporting is the documented larger-scale alternative. `/categories` returns category/rule metadata without database access.
+`main.user_expense_drilldown()` / `group_expense_drilldown()` use the same ReportDB/report_scope snapshot and personal/group spending CTE. expense_drilldown() adds the category predicate, counts SQL rows, and calls expense_rows() with amount/date sorting and bounded limit/offset. No full expense-ID array or full-history rows are loaded into Python. Read-session close releases the snapshot and SQLAlchemy restores the pooled connection isolation. Normal financial writes keep their existing READ COMMITTED/exclusive group-lock discipline. `/categories` exposes versioned rules without database access.
 
 ## Seed, verification, and CI
 
@@ -165,4 +168,4 @@ Report memory is proportional to selected history and locks last until session c
 
 Unit tests call domain helpers and input schemas. The tiny independent optimizer oracle recursively explores transfers, not the DP recurrence. `tests/conftest.py` requires a PostgreSQL test database ending in _test, creates a random schema, migrates it, builds create_app(Settings(...)), and runs TestClient requests. Cleanup disposes engines and drops only the generated schema. Concurrent settlement tests use separate connections/barriers. Migration tests compare models and execute downgrade/re-upgrade.
 
-CI installs locked Python 3.12 dependencies, runs Ruff and the full suite against PostgreSQL, validates Compose, and builds Docker. Local results/limits are recorded in docs/verification.md; remote execution awaits GitHub publishing.
+CI installs locked Python 3.12 dependencies, runs Ruff and the full suite against PostgreSQL, validates Compose, and builds Docker. Local results/limits are recorded in docs/verification.md; the public repository has a verified baseline CI run and subsequent pushes run the same checks. docs/verification.md links the current Actions status.

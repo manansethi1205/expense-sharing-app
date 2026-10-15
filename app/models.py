@@ -108,9 +108,7 @@ class Settlement(Base):
         ForeignKeyConstraint(
             ["group_id", "to_user_id"], ["group_members.group_id", "group_members.user_id"]
         ),
-        CheckConstraint(
-            "amount_minor > 0 AND amount_minor <= 1000000000", name="settlement_amount"
-        ),
+        CheckConstraint("amount_minor > 0", name="settlement_amount"),
         CheckConstraint("from_user_id <> to_user_id", name="settlement_distinct_users"),
         CheckConstraint("mode IN ('direct','simplified')", name="settlement_mode"),
         Index("ix_settlement_group_date", "group_id", "occurred_at", "id"),

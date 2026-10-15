@@ -6,7 +6,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import func, select, union_all
 from sqlalchemy.orm import Session
 
-from app.domain.balances import Transfer, direct_balances, net_positions
+from app.domain.balances import Transfer, direct_balances, net_positions, remove_circulation
 from app.domain.categories import Classification, classify_description
 from app.domain.money import format_money, to_minor
 from app.domain.settlements import Plan, suggest_transfers, validate_settlement
@@ -313,7 +313,7 @@ def preview_settlements(session: Session, group_id: int, mode: str, threshold: i
     labels, positions, direct = balance_data(session, group_id)
     # A net-settled group never needs extra payments just to clear a historical cycle.
     plan = (
-        Plan(direct if any(positions.values()) else [], "direct", "preserve_original_debts", False)
+        Plan(remove_circulation(direct), "direct", "preserve_original_debts", False)
         if mode == "direct"
         else suggest_transfers(positions, threshold)
     )
@@ -325,7 +325,7 @@ def preview_settlements(session: Session, group_id: int, mode: str, threshold: i
         "optimality_guaranteed": plan.optimality_guaranteed,
         "transaction_count": len(plan.transfers),
         "transfers": [transfer_dict(t, labels) for t in plan.transfers],
-        "explanation": "Advisory only; record externally completed payments separately. Exact plans minimize transfer count; direct mode preserves pairwise obligations; greedy results have no minimum-count guarantee.",
+        "explanation": "Advisory only; record externally completed payments separately. Exact plans minimize transfer count; direct mode preserves creditor relationships while cancelling unnecessary circulation; greedy results have no minimum-count guarantee.",
     }
 
 

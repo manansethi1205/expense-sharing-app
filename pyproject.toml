@@ -30,6 +30,7 @@ dev = [
 packages = ["app"]
 
 [tool.pytest.ini_options]
+addopts = "--import-mode=importlib"
 testpaths = ["tests"]
 markers = ["integration: requires an isolated PostgreSQL test database"]
 

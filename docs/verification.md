@@ -6,9 +6,9 @@ Verified 2026-10-16 (Asia/Calcutta). The full pytest run used Windows 10, Python
 
 | Check | Result |
 | --- | --- |
-| Full pytest suite, real PostgreSQL | 51 passed, no warnings; final regression 9.60 seconds |
-| Pure unit suite | 37 cases, including 625 independent small optimizer inputs inside one exhaustive test |
-| Integration suite | 14 tests, separate migrated PostgreSQL schema per test |
+| Full pytest suite, real PostgreSQL | 83 passed, no warnings; audit regression 17.74 seconds |
+| Pure unit suite | 50 cases, including 625 independent optimizer inputs and 100 seeded cycle graphs |
+| Integration suite | 33 tests, separate migrated PostgreSQL schema per test |
 | Simultaneous settlements | Separate connections: one 300.00 payment succeeds; another is rejected against a 400.00 debt |
 | Exact optimizer | Greedy counterexample: five transfers versus exact four, including API execution of the exact plan |
 | Migration/model comparison | No new upgrade operations detected |
@@ -41,6 +41,17 @@ The default threshold remains 16; configuration may lower it, never raise it abo
 ## Limits of this verification
 
 - Docker was initially inaccessible, then became available from the authorized build command. The first image build hit a package download timeout; a longer pip read timeout allowed the hashed dependency install/build to complete. Image startup, migrations, health checks, smoke scenario, and repeatable seeding all passed.
-- GitHub is not connected, so neither remote repository creation/push nor a remote CI run is claimed.
+- Public repository and its baseline successful CI were verified. It is now renamed/described as [expense-sharing-app](https://github.com/manansethi1205/expense-sharing-app). The fixed implementation is published via normal fast-forward pushes; [Actions](https://github.com/manansethi1205/expense-sharing-app/actions) shows the latest workflow result.
 - To run genuine PostgreSQL tests while Docker was inaccessible, portable binaries were downloaded from EDB into ignored `.tools/` and a separate cluster initialized under ignored `.test-data/`. This is workspace verification infrastructure, not a second database backend or required project installation path.
 - Native task processes (API on 8000 and PostgreSQL on 55432) were stopped after verification. The temporary Compose verification stack used API port 8001/database port 55433 and was then stopped. The normal project stack is started on the README's default ports for review; setup does not depend on ignored verification files.
+
+## Audit regression evidence
+
+- Aggregate direct and simplified suggestions of INR 20,000,000 now POST successfully after two individually valid INR 10,000,000 expenses. Exact metadata remains accurate.
+- A debt plus an independent three-member cycle now suggests only the necessary direct payment; history retains the explanatory cycle after net clearing.
+- Null characters in user/group names, descriptions, notes, and search return 422 instead of an unhandled database error.
+- Category context covers bus/flight tickets and mixed hotel-dinner/flight descriptions. Multiword feature discovery covers custom splits/user creation/membership and other capabilities.
+- SQL report totals retain personal-share semantics and show names; category/date/timezone filters and pagination cover all matching expenses beyond the top five.
+- Coordinated report/writer test confirms REPEATABLE READ + READ ONLY, allows a concurrent expense write, and keeps all report totals on the earlier snapshot.
+- Migration 0002/model comparison and rollback-safe downgrade refusal pass; large recorded settlements are preserved.
+- The complete Postman collection's 21 HTTP requests run twice in an isolated schema with dynamic IDs. Pytest validates the requests/capture/status flow; the embedded JavaScript assertions are included for Postman, not evaluated as JavaScript by pytest.

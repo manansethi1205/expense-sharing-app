@@ -1,5 +1,8 @@
 from decimal import Decimal
 
+MAX_SETTLEMENT_MINOR = 2**63 - 1
+MAX_SETTLEMENT_AMOUNT = Decimal(MAX_SETTLEMENT_MINOR) / 100
+
 
 def to_minor(amount: Decimal) -> int:
     scaled = amount * 100

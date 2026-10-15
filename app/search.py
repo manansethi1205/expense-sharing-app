@@ -9,9 +9,52 @@ from app.services import require_group, require_user
 
 FEATURES = (
     (
+        "users",
+        "Create and list users",
+        "create user|add user|list users|user details|user management|people|friends",
+        "/api/v1/users",
+    ),
+    (
+        "membership",
+        "Add group members",
+        "add member|add user to group|list members|membership|group members",
+        "/api/v1/groups/{group_id}/members/{user_id}",
+    ),
+    (
+        "equal-split",
+        "Equal expense split",
+        "equal split|shared expense|add expense|record expense",
+        "/api/v1/groups/{group_id}/expenses",
+    ),
+    (
+        "custom-split",
+        "Custom unequal splits",
+        "custom split|unequal split|custom allocation|unequal expense split",
+        "/api/v1/groups/{group_id}/expenses",
+    ),
+    (
+        "group-analytics",
+        "Group spending analytics",
+        "group report|group spending|member breakdown",
+        "/api/v1/groups/{group_id}/analytics",
+    ),
+    (
+        "drilldown",
+        "Spending expense drill-down",
+        "drill down|drilldown|spending details|personal expenses",
+        "/api/v1/users/{user_id}/analytics/expenses",
+    ),
+    (
+        "category-correction",
+        "Correct expense category",
+        "change category|manual category|correct category",
+        "/api/v1/groups/{group_id}/expenses/{expense_id}/category",
+    ),
+    ("search", "Search everything", "search|find|feature discovery", "/api/v1/search"),
+    (
         "settlements",
         "Settle balances",
-        "settle repayment reimburse payment",
+        "settle|repayment|reimburse|payment|record settlement|settlement history",
         "/api/v1/groups/{group_id}/settlements",
     ),
     (
@@ -29,11 +72,21 @@ FEATURES = (
     (
         "expenses",
         "Expense history",
-        "transactions dinner records",
+        "expense history|list expenses|expense details|transactions|dinner|records",
         "/api/v1/groups/{group_id}/expenses",
     ),
-    ("groups", "Groups", "trip friends members", "/api/v1/groups"),
-    ("balances", "Balances", "owes owed debts positions", "/api/v1/groups/{group_id}/balances"),
+    (
+        "groups",
+        "Groups",
+        "create group|list groups|group details|trip|friends|members",
+        "/api/v1/groups",
+    ),
+    (
+        "balances",
+        "Balances",
+        "user balances|group balances|owes|owed|debts|positions",
+        "/api/v1/groups/{group_id}/balances",
+    ),
     (
         "categories",
         "Expense categories",
@@ -134,7 +187,8 @@ def search(session: Session, query: str, types: str, group_id, user_id, limit, o
         candidates.extend(dict(row) for row in rows)
     if "features" in selected:
         for identifier, label, aliases, path in FEATURES:
-            words = [label.lower(), *aliases.split()]
+            # Pipe separates multiword aliases; older single-word alias lists remain valid.
+            words = [label.lower(), *(aliases.split("|") if "|" in aliases else aliases.split())]
             matches = [word for word in words if query in word]
             if matches:
                 score = min(

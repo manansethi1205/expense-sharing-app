@@ -4,6 +4,7 @@ from typing import Annotated, Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import (
+    AfterValidator,
     BaseModel,
     BeforeValidator,
     ConfigDict,
@@ -11,6 +12,17 @@ from pydantic import (
     StringConstraints,
     field_validator,
 )
+
+from app.domain.money import MAX_SETTLEMENT_AMOUNT
+
+
+def reject_null_text(value: str) -> str:
+    if "\x00" in value:
+        raise ValueError("Text must not contain null characters")
+    return value
+
+
+SafeText = Annotated[str, AfterValidator(reject_null_text)]
 
 Category = Literal["travel", "food", "accommodation", "activities", "shopping", "other"]
 Mode = Literal["direct", "simplified"]
@@ -23,10 +35,19 @@ PositiveMoney = Annotated[
     Decimal, Field(gt=0, le=10_000_000, max_digits=10, decimal_places=2, allow_inf_nan=False)
 ]
 PositiveId = Annotated[int, Field(gt=0, strict=True)]
+SettlementMoney = Annotated[
+    Decimal,
+    Field(gt=0, le=MAX_SETTLEMENT_AMOUNT, max_digits=19, decimal_places=2, allow_inf_nan=False),
+]
 
 
 class Input(BaseModel):
     model_config = ConfigDict(extra="forbid")
+
+    @field_validator("*")
+    @classmethod
+    def postgres_compatible_text(cls, value):
+        return reject_null_text(value) if isinstance(value, str) else value
 
 
 class ErrorContent(BaseModel):
@@ -98,7 +119,7 @@ ExpenseCreate = Annotated[
 class SettlementCreate(Input):
     from_user_id: PositiveId
     to_user_id: PositiveId
-    amount: PositiveMoney
+    amount: SettlementMoney
     mode: Mode
     note: Annotated[str, StringConstraints(strip_whitespace=True, max_length=500)] | None = None
     occurred_at: datetime | None = None
@@ -221,6 +242,7 @@ class SearchHit(BaseModel):
 
 class Breakdown(BaseModel):
     key: str
+    label: str
     amount: str
     percentage: str
 
@@ -231,6 +253,22 @@ class Totals(BaseModel):
     settlements_sent: str
     settlements_received: str
     net_cash_outflow: str
+
+
+class GroupLabel(BaseModel):
+    id: int
+    name: str
+
+
+class AnalyticsExpenseRead(BaseModel):
+    expense_id: int
+    group: GroupLabel
+    paid_by: UserLabel
+    description: str
+    category: Category
+    occurred_at: datetime
+    amount: str
+    expense_amount: str
 
 
 class AnalyticsRead(BaseModel):
@@ -245,5 +283,6 @@ class AnalyticsRead(BaseModel):
     months: list[Breakdown]
     groups: list[Breakdown]
     members: list[Breakdown]
-    largest_expenses: list[dict]
+    largest_expenses: list[AnalyticsExpenseRead]
+    drilldown_path: str
     metric_definitions: dict[str, str]

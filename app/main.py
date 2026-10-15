@@ -10,11 +10,12 @@ from sqlalchemy.orm import Session
 from app import reporting, services
 from app import search as search_service
 from app.config import Settings, get_settings
-from app.db import get_session, session_factory
+from app.db import get_report_session, get_session, session_factory
 from app.domain.categories import CATEGORIES, PHRASES, RULES_VERSION, WORDS
 from app.errors import DomainError, register_handlers
 from app.models import Expense, Group, Member, Settlement, User
 from app.schemas import (
+    AnalyticsExpenseRead,
     AnalyticsRead,
     BalanceRead,
     Category,
@@ -28,6 +29,7 @@ from app.schemas import (
     Mode,
     Page,
     PlanRead,
+    SafeText,
     SearchHit,
     SettlementCreate,
     SettlementRead,
@@ -37,6 +39,7 @@ from app.schemas import (
 )
 
 DB = Annotated[Session, Depends(get_session)]
+ReportDB = Annotated[Session, Depends(get_report_session)]
 Limit = Annotated[int, Query(ge=1, le=100)]
 Offset = Annotated[int, Query(ge=0)]
 Start = Annotated[date | None, Query(alias="from", description="Inclusive local calendar date")]
@@ -52,7 +55,7 @@ def create_user(payload: UserCreate, session: DB):
 
 
 @router.get("/users", response_model=Page[UserRead], tags=["Users"])
-def list_users(session: DB, q: str | None = None, limit: Limit = 20, offset: Offset = 0):
+def list_users(session: DB, q: SafeText | None = None, limit: Limit = 20, offset: Offset = 0):
     statement = select(User).order_by(User.id)
     if q:
         statement = statement.where(func.lower(User.name).contains(q.lower(), autoescape=True))
@@ -73,7 +76,7 @@ def create_group(payload: GroupCreate, session: DB):
 def list_groups(
     session: DB,
     user_id: int | None = None,
-    q: str | None = None,
+    q: SafeText | None = None,
     limit: Limit = 20,
     offset: Offset = 0,
 ):
@@ -139,7 +142,7 @@ def create_expense(group_id: int, payload: ExpenseCreate, session: DB):
 def list_expenses(
     group_id: int,
     session: DB,
-    q: str | None = None,
+    q: SafeText | None = None,
     category: Category | None = None,
     paid_by: int | None = None,
     start: Start = None,
@@ -265,11 +268,11 @@ def list_settlements(
 @router.get("/users/{user_id}/analytics", response_model=AnalyticsRead, tags=["Analytics"])
 def user_analytics(
     user_id: int,
-    session: DB,
+    session: ReportDB,
     start: Start = None,
     end: End = None,
     group_id: int | None = None,
-    timezone: str | None = None,
+    timezone: SafeText | None = None,
     bucket: Literal["month"] = "month",
 ):
     return reporting.summarize(
@@ -280,20 +283,80 @@ def user_analytics(
 @router.get("/groups/{group_id}/analytics", response_model=AnalyticsRead, tags=["Analytics"])
 def group_analytics(
     group_id: int,
-    session: DB,
+    session: ReportDB,
     start: Start = None,
     end: End = None,
-    timezone: str | None = None,
+    timezone: SafeText | None = None,
     bucket: Literal["month"] = "month",
 ):
     return reporting.summarize(session, group_id=group_id, start=start, end=end, timezone=timezone)
 
 
+@router.get(
+    "/users/{user_id}/analytics/expenses",
+    response_model=Page[AnalyticsExpenseRead],
+    tags=["Analytics"],
+)
+def user_expense_drilldown(
+    user_id: int,
+    session: ReportDB,
+    start: Start = None,
+    end: End = None,
+    group_id: int | None = None,
+    timezone: SafeText | None = None,
+    category: Category | None = None,
+    sort: Literal["amount_desc", "date_desc"] = "amount_desc",
+    limit: Limit = 20,
+    offset: Offset = 0,
+):
+    return reporting.expense_drilldown(
+        session,
+        user_id=user_id,
+        group_id=group_id,
+        start=start,
+        end=end,
+        timezone=timezone,
+        category=category,
+        sort=sort,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@router.get(
+    "/groups/{group_id}/analytics/expenses",
+    response_model=Page[AnalyticsExpenseRead],
+    tags=["Analytics"],
+)
+def group_expense_drilldown(
+    group_id: int,
+    session: ReportDB,
+    start: Start = None,
+    end: End = None,
+    timezone: SafeText | None = None,
+    category: Category | None = None,
+    sort: Literal["amount_desc", "date_desc"] = "amount_desc",
+    limit: Limit = 20,
+    offset: Offset = 0,
+):
+    return reporting.expense_drilldown(
+        session,
+        group_id=group_id,
+        start=start,
+        end=end,
+        timezone=timezone,
+        category=category,
+        sort=sort,
+        limit=limit,
+        offset=offset,
+    )
+
+
 @router.get("/search", response_model=Page[SearchHit], tags=["Search"])
 def search(
     session: DB,
-    q: Annotated[str, Query(min_length=1, max_length=100)],
-    types: str = "users,groups,expenses,features",
+    q: Annotated[SafeText, Query(min_length=1, max_length=100)],
+    types: SafeText = "users,groups,expenses,features",
     group_id: int | None = None,
     user_id: int | None = None,
     limit: Limit = 20,
@@ -309,7 +372,7 @@ def categories():
         "rules_version": RULES_VERSION,
         "keywords": {key: sorted(values) for key, values in WORDS.items()},
         "phrase_overrides": PHRASES,
-        "explanation": "Manual choice wins; phrase rules precede whole-word rules. Ambiguous or unmatched descriptions use other. Old expenses keep their saved classification.",
+        "explanation": "Manual choice wins. Specific phrases consume only their own words; unrelated conflicting context yields other. Generic tickets do not override specific transport context. Old expenses keep their saved classification.",
     }
 
 
