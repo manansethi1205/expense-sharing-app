@@ -2,7 +2,7 @@
 
 FastAPI expense-sharing backend planned with exact monetary accounting, searchable history, explainable spending analytics, and settlement suggestions.
 
-**Status: design phase. Application code has deliberately not been built.** The architecture below is a recommendation for discussion, not an implemented feature list. FastAPI and a public GitHub repository named `expense-sharing-app` are requested choices; the remaining technical choices are proposals.
+**Status: design phase. Application code has deliberately not been built.** The architecture below is a design, not an implemented feature list. FastAPI and a public GitHub repository named `expense-sharing-app` are requested choices. The hybrid exact/greedy settlement design has been accepted; the other technical choices remain proposals.
 
 ## Assignment scope
 
@@ -113,7 +113,37 @@ Provide two explicitly labelled views:
 - **Direct balances:** per-member-to-payer obligations from expense shares, reduced by opposite obligations and recorded transfers. They explain original relationships. No self-edges; omit zero edges.
 - **Net positions and simplified settlement plan:** group-wide positions plus proposed transfers that clear those positions. A member may pay someone who did not originally pay for their expense.
 
-Simplified settlement matches the largest debtor with the largest creditor for `min(debt, credit)`, with user ID as a deterministic tiebreaker. Use heaps, O(n log n) after aggregation, and at most n-1 transfers for n nonzero positions. This is a practical short plan, **not a guarantee of the mathematical minimum transaction count**. Suggestions are computed on demand and never recorded automatically.
+Simplified settlement minimizes the number of payments using a bounded hybrid strategy. Let n be the number of members with nonzero net positions, not the total group membership:
+
+| Nonzero positions | Strategy | Guarantee |
+| --- | --- | --- |
+| 0 | Exact empty plan | Zero payments is optimal |
+| Up to 16 initially | Exact bitmask dynamic programming | Minimum payment count across unrestricted member-to-member settlements |
+| Above the threshold | Greedy debtor/creditor matching | Valid plan with at most n-1 payments; minimum not guaranteed |
+
+Exact optimization finds the maximum number k of disjoint zero-sum subsets, then settles each subset internally. The minimum number of transfers is n-k. Use an O(n * 2^n) time / O(2^n) space dynamic program and reconstruct the subsets before producing payments. This exponential cost is why exact computation is bounded; minimum-transfer debt clearing is NP-hard in general ([research paper](https://arxiv.org/abs/1111.3663)).
+
+Within each reconstructed subset, or for the large-group fallback, use heaps to match the largest debtor and creditor for `min(debt, credit)`. Greedy takes O(n log n) after aggregation. Applying it inside each subset of a maximum zero-sum partition achieves the exact minimum total count; applying it to the entire group alone does not. For example, debts of 900, 800, 400 and credits of 800, 700, 600 require five payments under global largest-first greedy but only four under an optimal plan.
+
+Sort member IDs and define stable tiebreakers for DP reconstruction and heap matching, so exact plans are deterministic too. Start with a server-side exact threshold of 16, benchmark representative inputs, and lower it if latency/memory requires. There is no caller option to bypass the bound and no new optimization dependency. The exact branch must finish before advertising an optimality guarantee; an interrupted exact attempt must never be labelled optimal. Suggestions are computed on demand and never recorded automatically.
+
+The preview response exposes `mode`, `strategy`, `objective`, `optimality_guaranteed`, `transaction_count`, and transfers. Simplified mode uses `objective: "minimum_transactions"`, strategy `exact` or `greedy`, and a guarantee true only for a completed exact result. Direct mode uses strategy `direct`, objective `preserve_original_debts`, and no global minimum-count guarantee. Keep user-selected payment mode separate from the server-selected algorithm.
+
+```json
+{
+  "group_id": 1,
+  "currency": "INR",
+  "mode": "simplified",
+  "strategy": "exact",
+  "objective": "minimum_transactions",
+  "optimality_guaranteed": true,
+  "transaction_count": 2,
+  "transfers": [
+    {"from_user_id": 2, "to_user_id": 1, "amount": "400.00"},
+    {"from_user_id": 3, "to_user_id": 1, "amount": "400.00"}
+  ]
+}
+```
 
 Example: A owes B 100.00 and B owes C 100.00. Direct mode proposes A -> B and B -> C. Simplified mode proposes A -> C 100.00. After that transfer all net positions are zero, while historical pairwise accounting can contain a zero-net cycle. Mark the group settled based on net positions; do not present the historical cycle as new money that must be paid.
 
@@ -137,7 +167,7 @@ All application routes use `/api/v1`. Collections return `{ "items": [...], "lim
 | GET | `/groups/{group_id}/expenses/{expense_id}` | Expense with payer and saved shares; enforce group match |
 | PATCH | `/groups/{group_id}/expenses/{expense_id}/category` | Correct category; mark source manual |
 | GET | `/groups/{group_id}/balances` | `view=direct` or `view=net`; default direct for assignment compatibility |
-| GET | `/groups/{group_id}/settlement-suggestions` | `mode=direct` or `simplified`; default simplified; no write |
+| GET | `/groups/{group_id}/settlement-suggestions` | `mode=direct` or `simplified`; default simplified; exact/greedy selected server-side; returns objective/guarantee/count; no write |
 | POST / GET | `/groups/{group_id}/settlements` | Record / list payments, including partial settlements |
 | GET | `/users/{user_id}/balances` | Positions and dues grouped by group; never collapse currencies/groups |
 | GET | `/users/{user_id}/analytics` | Personal share spend, paid amounts, settlement cash flow, category/month/group breakdowns |
@@ -232,6 +262,9 @@ Include totals, category amounts/percentages, monthly series, group breakdown, a
 - Membership added after an expense leaves historical shares and balances unchanged.
 - Partial/full/oversized/self/nonmember settlements; simplified chain; zero-net cycle; two concurrent settlements against the same debt.
 - Suggested transfers conserve balances, never pay oneself, and clear a copied set of positions without changing stored history.
+- Exact plans match an independent brute-force oracle on tiny cases; include the greedy five-versus-optimal-four counterexample, several independent zero-sum subsets, repeated balances, and multiple equally optimal plans.
+- Threshold routing counts nonzero positions only; test 16 versus 17, the empty plan, deterministic tie resolution, response metadata, and greedy results that happen to be optimal without claiming a guarantee.
+- Benchmark the exact branch at its threshold before finalizing the cutoff; correctness tests do not substitute for latency/memory measurements.
 - Search filters, wildcard escaping, duplicate names, deterministic pagination, and ambiguous category/manual override behavior.
 - Analytics distinguish paid/share/cash flow, avoid duplicate sums, and handle date boundaries/empty periods.
 - Integration tests use isolated PostgreSQL state, apply migrations, and exercise API responses and constraints; pure math tests need no database.
@@ -261,8 +294,8 @@ GitHub target: public repository `expense-sharing-app`. Suggested repository des
 | 8-10 h | Focused unit/integration tests, especially money and settlements |
 | 10-12 h | Docker verification, seed demo, documentation, repository polish |
 
-This is a target rather than a guarantee. The requested extras fill the available time; preserve correctness and the requested bonuses before polishing analytics ranking or adding more features.
+This is a target rather than a guarantee. Exact DP, reconstruction, independent optimality tests, and threshold benchmarking add work inside the settlement/test blocks; the original 12-hour target is now tighter. Preserve correctness and the requested bonuses before polishing analytics ranking or adding more features, and revise estimates after implementing the optimizer.
 
 Quick follow-ups, ordered by value: CSV export (about 30-45 minutes plus escaping/formula-injection handling), duplicate-expense warning (30-60 minutes, advisory only), group budget with remaining amount (45-60 minutes), and GitHub CI for lint/tests (30-60 minutes once Docker tests work). These estimates are tentative; none is committed to the initial 12-hour scope. Idempotent expense/settlement POSTs are valuable but need payload-bound keys and concurrency tests, so budget them separately rather than calling them a trivial header change.
 
-With more time: financial reversal records, authentication/group authorization, idempotency, fuzzy search, membership departure rules, receipt attachments, budgets, richer category context, and measured performance improvements. Notifications, bank integrations, OCR, multiple currencies, and exact minimum-transfer optimization are outside the initial assignment scope.
+With more time: financial reversal records, authentication/group authorization, idempotency, fuzzy search, membership departure rules, receipt attachments, budgets, richer category context, and measured performance improvements. Notifications, bank integrations, OCR, multiple currencies, and exact optimization above the bounded small-group threshold are outside the initial assignment scope.

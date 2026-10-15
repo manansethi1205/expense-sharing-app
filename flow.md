@@ -19,7 +19,7 @@ app/
     money.py                 to_minor(), format_money()
     splits.py                equal_shares(), validate_custom_shares()
     balances.py              direct_balances(), net_positions()
-    settlements.py           suggest_transfers(), validate_settlement()
+    settlements.py           suggest_transfers(), exact_partition(), greedy_transfers(), validate_settlement()
     categories.py            classify_description(), category rules/version
     search.py                feature directory and ranking helpers
 migrations/                  Alembic environment and versioned migrations
@@ -162,13 +162,43 @@ GET /groups/{group_id}/settlement-suggestions?mode=simplified
      -> balances_queries.load_group_ledger()
      -> net_positions()
      -> domain.settlements.suggest_transfers(copy_of_positions)
-        -> creditor and debtor heaps with stable user-ID tiebreakers
-        -> pop largest credit/debt
-        -> emit min(credit, debt); update leftovers; repeat
-     -> return advisory transfers + currency + mode + explanation
+        -> remove zero positions; sort by user ID; require total == 0
+        -> n <= exact threshold (initially 16)?
+           yes: exact_partition(positions)
+                -> subset sums + maximum-zero-sum-partition DP
+                -> reconstruct disjoint zero-sum subsets
+                -> greedy_transfers() within each reconstructed subset
+                -> strategy=exact, optimality_guaranteed=true
+           no:  greedy_transfers(all nonzero positions)
+                -> strategy=greedy, optimality_guaranteed=false
+        -> return transfers + strategy + objective=minimum_transactions
+     -> batch user labels; transaction_count=len(transfers)
+     -> return advisory transfers + metadata + currency + mode + explanation
 ```
 
-Direct mode returns nonzero direct debt edges as transfers; it may take more payments and preserve original creditor relationships. Both previews are reads and never insert settlements. Labels are loaded in a batch. Amount conservation and no-self-payment hold in both modes. Suggestions are not guaranteed globally optimal.
+Direct mode returns nonzero direct debt edges as transfers, with strategy=direct, objective=preserve_original_debts, and optimality_guaranteed=false. It may take more payments and preserves original creditor relationships. Both previews are reads and never insert settlements. Amount conservation and no-self-payment hold in both modes. Exact simplified results minimize payment count across unrestricted member-to-member settlements; neither direct mode nor the greedy fallback claims that guarantee. Zero-net historical cycles retain the balance view's explanation rather than being labelled new required payments.
+
+### Exact partition internals and reconstruction
+
+For sorted nonzero positions b[0..n-1], represent a subset as a bitmask. Precompute sum[mask] by removing its least significant set bit and adding that position. Use integer paise throughout.
+
+```text
+best[0] = 0
+for each nonempty mask in increasing numeric order:
+    choose i in mask maximizing best[mask without i]
+    break ties by smallest user ID; save i as parent[mask]
+    best[mask] = best[mask without i] + (1 if sum[mask] == 0 else 0)
+
+follow parent from full mask to zero; reverse the removed-ID sequence
+walk that order, accumulating a running sum
+each time running sum reaches zero, close one reconstructed subset
+```
+
+The recurrence maximizes zero-sum prefix closures over all member orderings. Every partition into zero-sum subsets can be arranged as consecutive blocks in an ordering, so the optimum closure count is the maximum zero-sum partition count k. With n nonzero positions, a settlement's connected components must each have total zero and a component of m members needs at least m-1 transfers. This gives the lower bound n-k; settling each reconstructed subset reaches it. The DP takes O(n * 2^n) time and O(2^n) space, including reconstruction parents and subset sums.
+
+`greedy_transfers()` constructs debtor/creditor heaps with stable user-ID tiebreakers, emits min(debt, credit), and reinserts nonzero leftovers. Use copies so planning never mutates the ledger. Within a maximum zero-sum partition it produces exactly n-k transfers in total; across the whole group alone it has no minimum-count guarantee.
+
+The threshold counts nonzero positions and is server-controlled, initially 16. Benchmark latency and peak memory before fixing the final cutoff; callers cannot force a larger exact search. An all-zero ledger returns an exact empty plan with count=0 and guarantee=true. A completed exact plan must be reconstructed before returning guarantee=true; never label an interrupted search or heuristic result exact. Mode controls payment semantics; strategy describes the selected planning algorithm and is not accepted as an override in settlement POSTs.
 
 ## Recording settlements
 
@@ -243,5 +273,7 @@ Prefer a single aggregate query with CTEs or a consistent read-only snapshot tra
 ## Verification and documentation upkeep
 
 Unit tests call domain helpers directly. Integration tests initialize an isolated PostgreSQL database using migrations, override session configuration, call routes with TestClient, and assert status/body plus persisted effects. Concurrency tests use separate sessions/connections and coordinated settlement attempts, not one sequential client masquerading as concurrent writes.
+
+Optimizer tests compare exact plan counts with an independent exhaustive settlement oracle on tiny instances, not a second copy of the subset-DP recurrence. Cover the debts [900, 800, 400] / credits [800, 700, 600] counterexample (greedy five, exact four), repeated values, independent zero-sum subsets, multiple optima, all-zero groups, 16/17 nonzero-position routing, and large groups with only a few nonzero positions. Assert deterministic transfers, exact conservation, zero final positions, no self-payments, no input mutation, and accurate API metadata. A greedy result that happens to be optimal still reports guarantee=false. Benchmark the threshold separately from functional tests; record measured results and any cutoff adjustment in decisions.md when runtime implementation exists.
 
 For each implemented endpoint, replace this proposal with actual paths/function names, add callers/callees and tests, document transaction ownership, and record material deviations in decisions.md. Before submission verify startup, migrations, seed, OpenAPI examples, Docker commands, and the full assignment scenario end-to-end.

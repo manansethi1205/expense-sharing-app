@@ -1,6 +1,6 @@
 # Decision register
 
-Status: proposal, 2026-10-16. No application implementation exists. User-confirmed requirements are marked **required**; proposed implementation decisions are marked **proposed**. Approval of this document is not assumed. Record future changes here with date, reason, alternatives, consequences, and links to implementation/tests.
+Status: design, 2026-10-16. No application implementation exists. User-confirmed requirements are marked **required**; approved design changes are marked **accepted**; remaining implementation recommendations are marked **proposed**. Superseded entries are retained for history. Approval of the entire document is not assumed. Record future changes here with date, reason, alternatives, consequences, and links to implementation/tests.
 
 | ID | Status | Decision and reason | Tradeoffs / alternatives |
 | --- | --- | --- | --- |
@@ -26,7 +26,7 @@ Status: proposal, 2026-10-16. No application implementation exists. User-confirm
 | D20 | proposed | Validate cross-row share total in the service and write atomically. | Database row checks alone cannot enforce the aggregate; tests are essential. A trigger is unnecessary initial complexity. |
 | D21 | proposed | Derive balances from immutable records. No cached running balances. | Aggregation cost grows with history; avoids dual sources of truth at demo scale. |
 | D22 | proposed | Separate direct obligations from group net positions and simplified plans. | More explanation required; prevents falsely equating net clearing with erasing historical pairwise cycles. |
-| D23 | proposed | Greedy heap-based debtor/creditor matching with ID tiebreakers. | O(n log n) after aggregation, short deterministic plan, no guarantee of globally minimum transfers. |
+| D23 | superseded | Originally proposed global greedy heap-based debtor/creditor matching with ID tiebreakers. Replaced by D54-D60 on 2026-10-16 following user acceptance of the hybrid recommendation. | Fast and valid but can miss smaller plans, including the documented five-versus-four counterexample. Retained as the fallback, not the sole simplified strategy. |
 | D24 | required | Record partial/full settlements as separate records. | External cash/UPI/bank payment is recorded, not executed or verified by this backend. |
 | D25 | proposed | Validate settlements in explicit direct/simplified mode and store the mode. | Slightly larger API; distinguishes pairwise caps from net-position caps. |
 | D26 | proposed | Lock the group row before membership additions or financial writes; revalidate within transaction. | Serializes writes per group, appropriate for small groups; prevents concurrent stale-cap/membership decisions. |
@@ -57,6 +57,17 @@ Status: proposal, 2026-10-16. No application implementation exists. User-confirm
 | D51 | proposed | Do not install runtime packages or create runnable Docker files during design discussion. | Keeps the user's no-build-first instruction intact; setup instructions explicitly remain planned. |
 | D52 | proposed | Read each balance ledger as a single event projection; use a consistent snapshot for multi-query analytics. | Ordinary separate READ COMMITTED queries can observe different concurrent states; projection/CTE structure needs care. |
 | D53 | proposed | Unified search accepts trimmed queries of 1-100 characters and offset <= 1000. | Bounds merged candidate retrieval; large-history navigation relies on entity-specific history filters. |
+| D54 | accepted | Use exact optimization for small groups and deterministic greedy above a bound. User accepted this change on 2026-10-16. | Stronger minimum-payment results for likely demo groups; more implementation/testing effort than greedy alone. |
+| D55 | accepted | Use bitmask DP to maximize disjoint zero-sum subsets, then reconstruct and settle each subset. Minimum payments = n-k. | O(n * 2^n) time / O(2^n) space; exponential scaling requires a bound. No solver dependency. |
+| D56 | accepted | Initial server-side exact threshold is 16 nonzero member positions; benchmark before finalizing. | Total group size is irrelevant after dropping zeros. Caller cannot request unbounded exact work; benchmark may justify lowering the cutoff. |
+| D57 | accepted | Stable ID order and explicit DP/heap tiebreakers make both algorithms deterministic. | Chooses reproducibly among equally optimal plans without claiming an additional preference objective. |
+| D58 | accepted | Preview exposes strategy, objective, optimality_guaranteed, transaction_count, and transfers. | More response metadata, but no false minimum claim for fallback results. Guarantee requires completed exact search. |
+| D59 | accepted | Retain direct mode as preserve_original_debts, separate from simplified minimum_transactions. | Exact simplified optimization may change original creditors; direct mode makes no global minimum-count guarantee. No database/schema change required. |
+| D60 | accepted | Extend planned tests with an independent tiny-instance oracle, counterexample, cutoff boundaries, determinism, and benchmark evidence. | Adds work within the already tight 12-hour target; revise estimates rather than quietly reducing accounting validation. |
+
+## Change history
+
+- **2026-10-16 — settlement optimization revision:** user accepted exact small-group optimization with greedy fallback. D23 is superseded by D54-D60. README API metadata, algorithm guarantees/limits, test scope, roadmap, and flow.md dispatch/DP reconstruction were updated together. This is an accepted design revision; runtime implementation and benchmarking remain pending.
 
 ## Maintenance contract
 
