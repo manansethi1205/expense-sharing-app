@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Expense Sharing - Complete Assignment Walkthrough",
-    "description": "Run requests in order. New IDs are captured automatically; works with an already-seeded demo. Covers core requirements, custom splits, settlements, search and analytics.",
+    "description": "Final assignment walkthrough. Live UI: https://expense-sharing-app-inda.onrender.com/. Import and select Render.postman_environment.json for the hosted API, or Local.postman_environment.json for localhost. Run all 21 requests in order; returned IDs are captured automatically, so this works with existing seed data. Uses a separate dinner-only trip, then demonstrates custom splits, settlements, categories, search and analytics. All records are synthetic; payments are recorded, not executed.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [

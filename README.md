@@ -1,20 +1,28 @@
 # Expense Sharing App
 
-FastAPI expense-sharing backend with exact monetary accounting, searchable history, explainable spending analytics, and bounded optimal settlement suggestions.
+FastAPI expense-sharing backend with exact monetary accounting, searchable history, explainable spending analytics, bounded optimal settlement suggestions and a responsive Fairshare UI.
 
-**Status: implemented and verified.** The current PostgreSQL suite passes **87 tests**, including audit regressions, migration safety, and concurrent snapshot reporting. Docker build/startup and the live assignment scenario pass. The public repository is [expense-sharing-app](https://github.com/manansethi1205/expense-sharing-app); its name and description match the submission. [GitHub Actions](https://github.com/manansethi1205/expense-sharing-app/actions) runs the full checks on every push. See [verification details](docs/verification.md).
+**Final assignment submission - 16 October 2026.** Backend, UI, Docker support and the Render demo are implemented and verified. The suite passes **87 tests** (54 unit, 33 PostgreSQL integration). Application baseline: `72f1182`; API: `0.1.0`; schema head: `0002`. Application CI passed [this run](https://github.com/manansethi1205/expense-sharing-app/actions/runs/38897558178). Start with the [recruiter handoff](SUBMISSION.md) and [verification record](docs/verification.md).
 
-## Try the UI and deploy
+## Try the live application
 
-**Live recruiter demo:** https://expense-sharing-app-inda.onrender.com/ (synthetic shared data). Its group history, INR 4,800 seeded analytics and settlement suggestions were verified after applying migrations on 2026-10-16. Free-tier sleep and database expiration still apply.
+**[Live Render demo](https://expense-sharing-app-inda.onrender.com/)** · **[Hosted Swagger UI](https://expense-sharing-app-inda.onrender.com/docs)** · **[Public GitHub repository](https://github.com/manansethi1205/expense-sharing-app)**
 
-Open the dashboard at `/` after starting the API. Seed with `docker compose exec api python -m scripts.seed_demo` for immediate results. **Create a fresh demo trip** creates a separate scenario without resetting another reviewer's changes.
+The live deployment uses managed PostgreSQL 18 in Oregon. Local Docker/tests and the reusable Blueprint specify PostgreSQL 17; the Blueprint selects Singapore for a new deployment. Both use the same schema/migrations. Group history, INR 4,800 seeded analytics, suggestions and a complete live expense-to-settlement workflow were verified on 16 October 2026.
 
-The responsive UI supports equal/custom expenses, saved splits, category correction, spending analytics and date filters, balances, partial/full repayment recording, people and search. Every financial result comes from the real API. This is a shared synthetic demo without authentication.
+Open Goa Trip (demo), switch the personal view, inspect expense shares, and view settlement suggestions. Choose **Create a fresh demo trip** before experimenting; it creates a separate scenario without resetting another reviewer's changes. The starting scenario is:
 
-[Deploy the free demo to Render](https://render.com/deploy?repo=https://github.com/manansethi1205/expense-sharing-app) using the included Blueprint, or follow the [deployment guide](docs/render.md). **Free Render databases expire after 30 days; free web services can sleep.** A public URL is assigned after successful deployment; no hosted URL is claimed before verification.
+| Member | Bills paid | Allocated consumption | Net position |
+| --- | ---: | ---: | ---: |
+| Mohit | INR 4,200.00 | INR 1,600.00 | Receives INR 2,600.00 |
+| Rahul | INR 600.00 | INR 1,600.00 | Owes INR 1,000.00 |
+| Ankit | INR 0.00 | INR 1,600.00 | Owes INR 1,600.00 |
 
-The expanded suite now passes **87 tests**, including hosting URL normalization and static-asset serving, in addition to the 83-test backend baseline. The UI was checked in a real browser, including custom splits, category correction, partial repayment, search and mobile layout.
+The responsive UI supports equal/custom expenses, saved splits, category correction, personal/group spending and date filters, balances, partial/full repayment recording, membership and search. Every financial result comes from the real API. Shared reviewer actions may alter an existing group.
+
+**Hosting scope:** this is a shared synthetic demo without authentication. Free Render web services sleep after inactivity and can take about a minute to wake; free PostgreSQL databases expire 30 days after creation. Payments are external-payment records, not real money transfers. [Render's free-tier limits](https://render.com/docs/free)
+
+For a local review, open `/` after starting the API and seed with `docker compose exec api python -m scripts.seed_demo`. To deploy your own copy, use [Deploy to Render](https://render.com/deploy?repo=https://github.com/manansethi1205/expense-sharing-app) or the [deployment guide](docs/render.md).
 
 ![Live UI with actual API results](docs/ui-preview.png)
 
@@ -28,7 +36,9 @@ The submission includes three standalone, illustrated-by-example PDF guides:
 | [API Documentation](output/pdf/api-documentation.pdf) | All 25 HTTP operations, parameters, JSON model fields, validation, worked expense/settlement examples, search and analytics semantics |
 | [Database Schema Explanation](output/pdf/database-schema-explanation.pdf) | Relationships, all six tables, constraints/indexes, exact money accounting, transaction boundaries and migration tradeoffs |
 
-Download the [Postman collection](output/expense-sharing.postman_collection.json), or the [complete documentation bundle](output/expense-sharing-documentation.zip). Import the collection into Postman and run it from the first request; returned IDs are captured automatically. The PDFs describe code revision `c5a0a64`, API version `0.1.0`, and schema head `0002`.
+Download the [final recruiter bundle](output/expense-sharing-final-submission.zip). Use the [Postman collection](docs/expense-sharing.postman_collection.json) with its [Render environment](docs/Render.postman_environment.json) or [Local environment](docs/Local.postman_environment.json). Select an environment and run from the first request; returned IDs are captured automatically. The PDFs include deployment details and describe application baseline `72f1182`, API `0.1.0`, and schema head `0002`.
+
+The bundle includes the three PDFs, recruiter handoff, README, decision register, code-flow map, deployment guide, verification record, screenshot, Postman files and offline OpenAPI contract. It excludes credentials, local databases, logs and caches. [Document regeneration instructions](docs/tooling/README.md) are available in the repository.
 
 The implementation covers users, groups, membership, equal shared expenses, history, structured balances, search, spending analytics, category suggestions, settlement suggestions, recorded settlements, custom splits, tests, and Docker support.
 
@@ -334,7 +344,7 @@ uv run python -m scripts.seed_demo
 uv run uvicorn app.main:app --reload
 ```
 
-Use either the container API or the local API on port 8000 at a time. The service does not auto-create tables at startup. `uv run alembic check` compares the current database against the models; create future migrations with `uv run alembic revision --autogenerate -m "describe change"` and review them before applying.
+Use either the container API or the local API on port 8000 at a time. A plain Uvicorn launch requires the migration command above; Compose runs its migration service first, while Render's startup script applies migrations before serving. `uv run alembic check` compares the current database against the models; create future migrations with `uv run alembic revision --autogenerate -m "describe change"` and review them before applying.
 
 ### Tests and quality checks
 
@@ -353,7 +363,7 @@ docker compose --profile test up -d --wait test-db
 uv run --env-file .env pytest -q
 ```
 
-Without `TEST_DATABASE_URL`, PostgreSQL tests are explicitly skipped. The test URL must name a PostgreSQL database ending in `_test` and differ from the app URL. Each test creates/migrates a random isolated schema and removes only that schema afterward. The test role needs CREATE SCHEMA privileges. CI runs the complete suite against its own PostgreSQL service, plus lint/format and a Docker build; the baseline remote workflow has passed, and every subsequent push runs the same checks. See the current result in GitHub Actions.
+Without `TEST_DATABASE_URL`, PostgreSQL tests are explicitly skipped. The test URL must name a PostgreSQL database ending in `_test` and differ from the app URL. Each test creates/migrates a random isolated schema and removes only that schema afterward. The test role needs CREATE SCHEMA privileges. CI runs the complete suite against its own PostgreSQL service, plus lint/format and a Docker build; the application baseline passed CI, and subsequent pushes run the same checks. See the current result in GitHub Actions.
 
 Regenerate the runtime dependency export after changing dependencies:
 
@@ -364,21 +374,9 @@ uv run python -m scripts.benchmark_settlements
 
 The benchmark writes an ignored `benchmark-results.json`. The verified sample at 16 nonzero positions measured median 136 ms and 3.50 MiB traced peak memory on Windows/Python 3.13; see [verification details](docs/verification.md). This supports the current threshold without claiming a worst-case latency bound.
 
-Public submission: [manansethi1205/expense-sharing-app](https://github.com/manansethi1205/expense-sharing-app). Repository description: **FastAPI expense-sharing backend with exact split accounting, searchable expenses, spending analytics, and smart settlement suggestions.** The repository was renamed from `expense_sharing`; origin now uses the requested name.
+Public submission: [manansethi1205/expense-sharing-app](https://github.com/manansethi1205/expense-sharing-app). Repository description: **FastAPI expense-sharing backend with exact split accounting, searchable expenses, spending analytics, and smart settlement suggestions.** The submission is published with the requested repository name.
 
-## Original 12-hour planning budget
-
-| Time | Deliverable |
-| --- | --- |
-| 0-1 h | Skeleton, settings, database models, initial migration |
-| 1-3 h | Users, groups, memberships, equal/custom expenses and history |
-| 3-5 h | Balance engine, suggestions, partial/full settlements and transaction rules |
-| 5-6 h | Unified search and explainable category rules |
-| 6-8 h | Share-based analytics and drill-down filters |
-| 8-10 h | Focused unit/integration tests, especially money and settlements |
-| 10-12 h | Docker verification, seed demo, documentation, repository polish |
-
-This was a scope-planning estimate, not a report of actual elapsed implementation time. The implemented optimizer includes reconstruction, independent optimality tests, and benchmark evidence.
+## Tradeoffs and future work
 
 Quick follow-ups: CSV export, advisory duplicate-expense warnings, and group budgets. GitHub CI for lint/tests and Docker build is already included. Idempotent expense/settlement POSTs remain deferred: they need payload-bound keys, persistent storage, and concurrency tests rather than just a header.
 

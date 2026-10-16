@@ -1,3 +1,5 @@
+### Local, empty-database example only. Do not switch these fixed IDs to the shared Render demo.
+### For hosted/seeded data, use the Postman collection with automatic ID capture and Render environment.
 ### Use VS Code REST Client or translate requests to curl. IDs assume an empty database.
 @base = http://localhost:8000/api/v1
 

@@ -1,12 +1,13 @@
 # Code flow map
 
-This maps the implemented code. Names/paths below are actual references. Keep it synchronized with decisions.md when behavior changes.
+Final submission - 16 October 2026. This maps the implemented application baseline 72f1182 (API 0.1.0, schema 0002), including the live Render UI and startup. Names/paths are actual references. Keep it synchronized with decisions.md when behavior changes. Live UI: https://expense-sharing-app-inda.onrender.com/.
 
 ## Module map
 
 | Module | Responsibility |
 | --- | --- |
-| app/main.py | create_app(), global app, all HTTP handlers, health routes |
+| app/main.py | create_app(), global app, all HTTP handlers, root UI/static mount, health routes |
+| app/static/index.html / style.css / app.js | Browser UI structure/style, state/view rendering, forms, API adapter and search |
 | app/config.py | Settings, cached get_settings(); environment/.env configuration |
 | app/db.py | session_factory(), get_session(); normal request session; get_report_session() for read-only repeatable-read reports |
 | app/errors.py | DomainError, envelope(), register_handlers() |
@@ -23,6 +24,8 @@ This maps the implemented code. Names/paths below are actual references. Keep it
 | migrations/env.py | Online/offline Alembic environment |
 | migrations/versions/0001_initial.py | Initial schema |
 | migrations/versions/0002_aggregate_settlement_limit.py | Remove the per-expense settlement cap; downgrade refuses incompatible existing payments |
+| scripts/start_render.py | main(); migrate, idempotently seed, bind Uvicorn to Render PORT |
+| render.yaml | Reusable free-tier service/database configuration for a new deployment |
 | scripts/seed_demo.py | seed(); atomic repeatable synthetic data |
 | scripts/benchmark_settlements.py | benchmark(); separate timing and memory measurements |
 | scripts/smoke_http.py | smoke(base); assignment scenario against a real HTTP server |
@@ -168,7 +171,7 @@ User consumption sums own saved shares; paid sums own expense payments. Group sp
 
 Unit tests call domain helpers and input schemas. The tiny independent optimizer oracle recursively explores transfers, not the DP recurrence. `tests/conftest.py` requires a PostgreSQL test database ending in _test, creates a random schema, migrates it, builds create_app(Settings(...)), and runs TestClient requests. Cleanup disposes engines and drops only the generated schema. Concurrent settlement tests use separate connections/barriers. Migration tests compare models and execute downgrade/re-upgrade.
 
-CI installs locked Python 3.12 dependencies, runs Ruff and the full suite against PostgreSQL, validates Compose, and builds Docker. Local results/limits are recorded in docs/verification.md; the public repository has a verified baseline CI run and subsequent pushes run the same checks. docs/verification.md links the current Actions status.
+CI installs locked Python 3.12 dependencies, runs Ruff and the full suite against PostgreSQL, validates Compose, and builds Docker. Final results/limits are recorded in docs/verification.md; application baseline 72f1182 passed CI and subsequent pushes run the same checks. docs/verification.md links the current Actions status.
 
 ## Browser UI and Render startup
 
@@ -189,3 +192,10 @@ The manually created Render service needed those settings applied in its dashboa
 `output/pdf/` contains separate setup, API and database-schema guides stamped with the source code revision, API version and migration head. Endpoint parameters/response models come from `app.openapi()`; table columns/constraints/indexes come from `Base.metadata`. Authored sections explain accounting, validation and transaction behavior around those generated references. These static artifacts do not run in the application's request path.
 
 The identical Postman collection copy under `output/` uses the same sequence/capture scripts as `docs/expense-sharing.postman_collection.json`. The ZIP bundles that collection and the three PDFs. PDF authoring/rendering tools are separate from backend runtime dependencies; every rendered page is visually reviewed before delivery. Regenerate the PDFs and refresh the copied collection/bundle whenever the documented API or schema changes.
+
+
+## Final documentation generation and package flow
+
+`python -m docs.tooling.build_pdfs` -> derive repo root and latest application commit -> `app.openapi()` / `Base.metadata` -> authored Setup/API/Schema stories -> `Guide.multiBuild()` with contents/bookmarks -> write three PDFs -> `render_and_verify()` renders each page, checks text bounds/page counts and produces contact sheets/text under ignored tmp/pdfs. Visual review is required after generation. These optional authoring imports never execute in API requests and are excluded from the app's runtime dependency list.
+
+`python -m docs.tooling.package_submission` -> export current OpenAPI JSON -> synchronize collection and Local/Render environments to output -> verify all 25 operations and the live URL occur in the PDFs -> verify collection request count/environment values/local links -> collect an explicit document allowlist -> hash entries into MANIFEST.json -> build/test final submission ZIP -> copy the same archive to the legacy documentation ZIP name. Only the allowlisted recruiter artifacts enter the archive; no .env, credentials, logs, test databases or caches are scanned into it. Postman environment base_url overrides the collection's localhost default; capture scripts continue storing dynamic IDs in collection variables.

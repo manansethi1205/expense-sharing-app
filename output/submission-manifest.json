@@ -1,0 +1,129 @@
+{
+  "edition": "Final recruiter submission - 16 October 2026",
+  "application_baseline": "72f1182",
+  "api_version": "0.1.0",
+  "schema_head": "0002",
+  "live_demo": "https://expense-sharing-app-inda.onrender.com/",
+  "source_repository": "https://github.com/manansethi1205/expense-sharing-app",
+  "pdfs": {
+    "setup-instructions.pdf": {
+      "pages": 12,
+      "bytes": 206053
+    },
+    "api-documentation.pdf": {
+      "pages": 33,
+      "bytes": 139048
+    },
+    "database-schema-explanation.pdf": {
+      "pages": 15,
+      "bytes": 103433
+    }
+  },
+  "files": [
+    {
+      "path": "SUBMISSION.md",
+      "bytes": 5208,
+      "sha256": "cc8ed7b401e56e25f6a2578064c1d43b0ebec788c2b7513d79e73a7bf8bcfb4b"
+    },
+    {
+      "path": "README.md",
+      "bytes": 35427,
+      "sha256": "5834895269d95186125ec2adeb74a1423dbd57c386f3371da9f74a44743031e5"
+    },
+    {
+      "path": "decisions.md",
+      "bytes": 32538,
+      "sha256": "ddb85a2716ddf8651c7102433471591efebf5c56c61fc6a9d9490e8e514a8bbb"
+    },
+    {
+      "path": "flow.md",
+      "bytes": 22763,
+      "sha256": "5fa8690e4e10efd9bbe8c84afb3efde438e113dfc456dfb8e127ae980a503bc8"
+    },
+    {
+      "path": "render.yaml",
+      "bytes": 730,
+      "sha256": "7d2c685afa47c01d3b6570c4f586be9e3ec97a94c6b39b79d299b09bf55a1216"
+    },
+    {
+      "path": ".env.example",
+      "bytes": 310,
+      "sha256": "304a55f82d2b45f4a476aa121a56333fd2a98ef76b8bde3aacd69c0c067f471f"
+    },
+    {
+      "path": "docs/render.md",
+      "bytes": 7006,
+      "sha256": "0b61b8f089415a6e81412296db25b07d4cd462e757d05f7c5af378e15a1c296d"
+    },
+    {
+      "path": "docs/verification.md",
+      "bytes": 8032,
+      "sha256": "35c36738bfadd153dce027646d84d1bc0668f6daa2d3713f79b5f554ede25fb1"
+    },
+    {
+      "path": "docs/ui-preview.png",
+      "bytes": 85978,
+      "sha256": "eb8b6a15990d266f5fe534e500f78e4825998111df1d90ebb31b39794f8b7d5b"
+    },
+    {
+      "path": "docs/demo.http",
+      "bytes": 2182,
+      "sha256": "4c47d9e589a66b7d4b457f39071dac957e16785646287165d365ad09aff53874"
+    },
+    {
+      "path": "docs/openapi.json",
+      "bytes": 94808,
+      "sha256": "6e4eebe205f98e078a71a7432528d4e32d5e6c7b6192868efb9af83495851188"
+    },
+    {
+      "path": "docs/expense-sharing.postman_collection.json",
+      "bytes": 15834,
+      "sha256": "05db0270580c60297f2db72aa90d11ce284ba5bae42506a12907a11a02da761d"
+    },
+    {
+      "path": "docs/Local.postman_environment.json",
+      "bytes": 246,
+      "sha256": "afeae34aeb3ccbeef8bcf0ab399bb51cd2746573995bf97474837c4cb65151a5"
+    },
+    {
+      "path": "docs/Render.postman_environment.json",
+      "bytes": 271,
+      "sha256": "5c13d417151bdd7a2fd010695b806551d90c5cfd85043627fe680025d7d76507"
+    },
+    {
+      "path": "docs/tooling/README.md",
+      "bytes": 1387,
+      "sha256": "329e894f0a3088de5eb607de237c383e3a8c7af8ba4fc3bb6fc0fdf063adbb8f"
+    },
+    {
+      "path": "docs/tooling/requirements.txt",
+      "bytes": 149,
+      "sha256": "767267170006aeb2639ff2c79827c3819a4bd593c061532001c8c981729282b0"
+    },
+    {
+      "path": "docs/tooling/build_pdfs.py",
+      "bytes": 97940,
+      "sha256": "5f16a9da515a886dd3b3faa1c82aa98d80a46019d729beb4ab390f31b052fb7e"
+    },
+    {
+      "path": "docs/tooling/package_submission.py",
+      "bytes": 7109,
+      "sha256": "62c9322a72d33ddbe4ffaa6fd816347eaf4dfa8d402021a2b0ec88b80b23a1fb"
+    },
+    {
+      "path": "output/pdf/setup-instructions.pdf",
+      "bytes": 206053,
+      "sha256": "b80fcfc692c11dd7aff436d170179252bd6eb99d3de3967e033658980096133e"
+    },
+    {
+      "path": "output/pdf/api-documentation.pdf",
+      "bytes": 139048,
+      "sha256": "28b68f2c25954cc3c7098ccb0b20c7d9057f5608b781a7ca62862b5e67c09d7b"
+    },
+    {
+      "path": "output/pdf/database-schema-explanation.pdf",
+      "bytes": 103433,
+      "sha256": "589d2b57e28a6809d79e9a5112b219adb64dd1057b2c7ee65c41e0a36f33ceec"
+    }
+  ]
+}

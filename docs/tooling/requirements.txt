@@ -1,0 +1,5 @@
+# Documentation authoring only. Backend dependencies stay in pyproject.toml / uv.lock.
+reportlab==5.0.1
+pypdf==6.20.1
+PyMuPDF==1.28.2
+Pillow==12.3.0
