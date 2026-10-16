@@ -1,0 +1,552 @@
+{
+  "info": {
+    "name": "Expense Sharing - Complete Assignment Walkthrough",
+    "description": "Run requests in order. New IDs are captured automatically; works with an already-seeded demo. Covers core requirements, custom splits, settlements, search and analytics.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8000/api/v1",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Create Mohit",
+      "request": {
+        "method": "POST",
+        "url": "{{base_url}}/users",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Mohit\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 201\", function () { pm.response.to.have.status(201); });",
+              "pm.collectionVariables.set(\"mohit_id\", pm.response.json().id);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Create Rahul",
+      "request": {
+        "method": "POST",
+        "url": "{{base_url}}/users",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Rahul\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 201\", function () { pm.response.to.have.status(201); });",
+              "pm.collectionVariables.set(\"rahul_id\", pm.response.json().id);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Create Ankit",
+      "request": {
+        "method": "POST",
+        "url": "{{base_url}}/users",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Ankit\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 201\", function () { pm.response.to.have.status(201); });",
+              "pm.collectionVariables.set(\"ankit_id\", pm.response.json().id);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Create Goa Trip",
+      "request": {
+        "method": "POST",
+        "url": "{{base_url}}/groups",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Goa Trip (API walkthrough)\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 201\", function () { pm.response.to.have.status(201); });",
+              "pm.collectionVariables.set(\"group_id\", pm.response.json().id);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Add Mohit",
+      "request": {
+        "method": "PUT",
+        "url": "{{base_url}}/groups/{{group_id}}/members/{{mohit_id}}",
+        "header": []
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 201\", function () { pm.response.to.have.status(201); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Add Rahul",
+      "request": {
+        "method": "PUT",
+        "url": "{{base_url}}/groups/{{group_id}}/members/{{rahul_id}}",
+        "header": []
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 201\", function () { pm.response.to.have.status(201); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Add Ankit",
+      "request": {
+        "method": "PUT",
+        "url": "{{base_url}}/groups/{{group_id}}/members/{{ankit_id}}",
+        "header": []
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 201\", function () { pm.response.to.have.status(201); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Record equal dinner",
+      "request": {
+        "method": "POST",
+        "url": "{{base_url}}/groups/{{group_id}}/expenses",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"paid_by\": {{mohit_id}},\n  \"amount\": \"1200.00\",\n  \"description\": \"Dinner\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 201\", function () { pm.response.to.have.status(201); });",
+              "pm.collectionVariables.set(\"expense_id\", pm.response.json().id);",
+              "pm.test(\"Three equal shares\", function () { pm.expect(pm.response.json().shares.map(s => s.amount)).to.eql([\"400.00\",\"400.00\",\"400.00\"]); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "View direct balances",
+      "request": {
+        "method": "GET",
+        "url": "{{base_url}}/groups/{{group_id}}/balances",
+        "header": []
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\", function () { pm.response.to.have.status(200); });",
+              "pm.test(\"Two debts\", function () { pm.expect(pm.response.json().balances).to.have.lengthOf(2); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Personal spending versus paid",
+      "request": {
+        "method": "GET",
+        "url": "{{base_url}}/users/{{mohit_id}}/analytics",
+        "header": []
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\", function () { pm.response.to.have.status(200); });",
+              "pm.test(\"Consumption differs from amount paid\", function () { pm.expect(pm.response.json().totals.spending).to.eql(\"400.00\"); pm.expect(pm.response.json().totals.paid).to.eql(\"1200.00\"); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Search Goa",
+      "request": {
+        "method": "GET",
+        "url": "{{base_url}}/search?q=Goa&group_id={{group_id}}",
+        "header": []
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\", function () { pm.response.to.have.status(200); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Preview exact settlements",
+      "request": {
+        "method": "GET",
+        "url": "{{base_url}}/groups/{{group_id}}/settlement-suggestions",
+        "header": []
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\", function () { pm.response.to.have.status(200); });",
+              "pm.test(\"Exact two-payment plan\", function () { pm.expect(pm.response.json().optimality_guaranteed).to.eql(true); pm.expect(pm.response.json().transaction_count).to.eql(2); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Record Rahul reimbursement",
+      "request": {
+        "method": "POST",
+        "url": "{{base_url}}/groups/{{group_id}}/settlements",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"from_user_id\": {{rahul_id}},\n  \"to_user_id\": {{mohit_id}},\n  \"amount\": \"400.00\",\n  \"mode\": \"direct\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 201\", function () { pm.response.to.have.status(201); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Record Ankit reimbursement",
+      "request": {
+        "method": "POST",
+        "url": "{{base_url}}/groups/{{group_id}}/settlements",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"from_user_id\": {{ankit_id}},\n  \"to_user_id\": {{mohit_id}},\n  \"amount\": \"400.00\",\n  \"mode\": \"direct\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 201\", function () { pm.response.to.have.status(201); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Verify fully settled",
+      "request": {
+        "method": "GET",
+        "url": "{{base_url}}/groups/{{group_id}}/balances",
+        "header": []
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\", function () { pm.response.to.have.status(200); });",
+              "pm.test(\"Group settled\", function () { pm.expect(pm.response.json().is_settled).to.eql(true); pm.expect(pm.response.json().balances).to.have.lengthOf(0); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Record unequal expense",
+      "request": {
+        "method": "POST",
+        "url": "{{base_url}}/groups/{{group_id}}/expenses",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"paid_by\": {{mohit_id}},\n  \"amount\": \"1000.00\",\n  \"description\": \"Activities\",\n  \"split_type\": \"custom\",\n  \"splits\": [\n    {\n      \"user_id\": {{mohit_id}},\n      \"amount\": \"500.00\"\n    },\n    {\n      \"user_id\": {{rahul_id}},\n      \"amount\": \"300.00\"\n    },\n    {\n      \"user_id\": {{ankit_id}},\n      \"amount\": \"200.00\"\n    }\n  ]\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 201\", function () { pm.response.to.have.status(201); });",
+              "pm.collectionVariables.set(\"custom_expense_id\", pm.response.json().id);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Correct category",
+      "request": {
+        "method": "PATCH",
+        "url": "{{base_url}}/groups/{{group_id}}/expenses/{{custom_expense_id}}/category",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"category\": \"activities\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\", function () { pm.response.to.have.status(200); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "View group analytics",
+      "request": {
+        "method": "GET",
+        "url": "{{base_url}}/groups/{{group_id}}/analytics",
+        "header": []
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\", function () { pm.response.to.have.status(200); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Paginate personal spending",
+      "request": {
+        "method": "GET",
+        "url": "{{base_url}}/users/{{mohit_id}}/analytics/expenses?limit=1&offset=0",
+        "header": []
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\", function () { pm.response.to.have.status(200); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Filter dinner consumption",
+      "request": {
+        "method": "GET",
+        "url": "{{base_url}}/users/{{mohit_id}}/analytics/expenses?category=food",
+        "header": []
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\", function () { pm.response.to.have.status(200); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Discover custom splits",
+      "request": {
+        "method": "GET",
+        "url": "{{base_url}}/search?q=custom%20split&types=features",
+        "header": []
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"HTTP 200\", function () { pm.response.to.have.status(200); });"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

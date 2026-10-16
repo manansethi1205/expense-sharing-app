@@ -25,6 +25,7 @@ build/
 *.sqlite3
 postgres-data/
 artifacts/
+tmp/pdfs/
 
 # Editor/OS
 .idea/

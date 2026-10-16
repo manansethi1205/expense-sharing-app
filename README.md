@@ -6,6 +6,16 @@ FastAPI expense-sharing backend with exact monetary accounting, searchable histo
 
 ## Assignment scope
 
+The submission includes three standalone, illustrated-by-example PDF guides:
+
+| Guide | Contents |
+| --- | --- |
+| [Setup Instructions](output/pdf/setup-instructions.pdf) | Docker/local Python setup, configuration, migrations, tests, Postman and troubleshooting |
+| [API Documentation](output/pdf/api-documentation.pdf) | All 25 HTTP operations, parameters, JSON model fields, validation, worked expense/settlement examples, search and analytics semantics |
+| [Database Schema Explanation](output/pdf/database-schema-explanation.pdf) | Relationships, all six tables, constraints/indexes, exact money accounting, transaction boundaries and migration tradeoffs |
+
+Download the [Postman collection](output/expense-sharing.postman_collection.json), or the [complete documentation bundle](output/expense-sharing-documentation.zip). Import the collection into Postman and run it from the first request; returned IDs are captured automatically. The PDFs describe code revision `c5a0a64`, API version `0.1.0`, and schema head `0002`.
+
 The implementation covers users, groups, membership, equal shared expenses, history, structured balances, search, spending analytics, category suggestions, settlement suggestions, recorded settlements, custom splits, tests, and Docker support.
 
 Search is the nominated mandatory product enhancement. Analytics and settlement suggestions are additional enhancements. Custom splits, settlements, tests, and Docker cover every optional bonus in the assignment.

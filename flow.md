@@ -169,3 +169,9 @@ User consumption sums own saved shares; paid sums own expense payments. Group sp
 Unit tests call domain helpers and input schemas. The tiny independent optimizer oracle recursively explores transfers, not the DP recurrence. `tests/conftest.py` requires a PostgreSQL test database ending in _test, creates a random schema, migrates it, builds create_app(Settings(...)), and runs TestClient requests. Cleanup disposes engines and drops only the generated schema. Concurrent settlement tests use separate connections/barriers. Migration tests compare models and execute downgrade/re-upgrade.
 
 CI installs locked Python 3.12 dependencies, runs Ruff and the full suite against PostgreSQL, validates Compose, and builds Docker. Local results/limits are recorded in docs/verification.md; the public repository has a verified baseline CI run and subsequent pushes run the same checks. docs/verification.md links the current Actions status.
+
+## Submission documentation
+
+`output/pdf/` contains separate setup, API and database-schema guides stamped with the source code revision, API version and migration head. Endpoint parameters/response models come from `app.openapi()`; table columns/constraints/indexes come from `Base.metadata`. Authored sections explain accounting, validation and transaction behavior around those generated references. These static artifacts do not run in the application's request path.
+
+The identical Postman collection copy under `output/` uses the same sequence/capture scripts as `docs/expense-sharing.postman_collection.json`. The ZIP bundles that collection and the three PDFs. PDF authoring/rendering tools are separate from backend runtime dependencies; every rendered page is visually reviewed before delivery. Regenerate the PDFs and refresh the copied collection/bundle whenever the documented API or schema changes.
