@@ -1,8 +1,11 @@
 from contextlib import asynccontextmanager
 from datetime import date
+from pathlib import Path
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, FastAPI, Query, Request, Response
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy import func, select, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
@@ -398,6 +401,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     register_handlers(application)
     application.include_router(router)
+    static_directory = Path(__file__).parent / "static"
+    application.mount("/static", StaticFiles(directory=static_directory), name="static")
+
+    @application.get("/", include_in_schema=False)
+    def dashboard():
+        return FileResponse(static_directory / "index.html", headers={"Cache-Control": "no-cache"})
 
     @application.get("/health/live", tags=["Health"])
     def live():

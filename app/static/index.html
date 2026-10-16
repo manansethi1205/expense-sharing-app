@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Try a live expense-sharing demo: record a trip, explore spending, and settle up with fewer payments.">
+  <title>Fairshare | Expense Sharing Demo</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%23165b48'/%3E%3Ctext x='18' y='46' font-size='42' fill='white'%3Ef%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+  <aside class="sidebar">
+    <a class="brand" href="/"><span class="brand-icon">f.</span>fairshare<span class="demo-tag">DEMO</span></a>
+    <p class="side-caption">GOOD TIMES. FAIR SHARES.</p>
+    <div class="side-heading"><span>Your trips</span><button id="new-group" class="icon-button" aria-label="Create a group">+</button></div>
+    <div id="group-list" class="group-list" aria-label="Select a trip"></div>
+    <button id="sample-trip" class="sample-button">↗ Create a fresh demo trip</button>
+    <div class="sidebar-bottom"><p>A backend you can actually try.</p><a href="/docs" target="_blank" rel="noopener">Explore the API ↗</a><a href="https://github.com/manansethi1205/expense-sharing-app" target="_blank" rel="noopener">View source on GitHub ↗</a></div>
+  </aside>
+  <main>
+    <header class="topbar"><span class="breadcrumb">WORKSPACE <span>/</span> <span id="breadcrumb-group">Your trips</span></span><div class="search-wrap"><label class="sr-only" for="search">Search groups, expenses and features</label><input id="search" type="search" placeholder="Search trips, expenses, features…" autocomplete="off"><div id="search-results" hidden></div></div></header>
+    <div class="demo-banner"><span class="status-dot"></span><span>Live demo · Synthetic data · Changes are shared. Create a fresh demo trip to try your own scenario.</span><a href="/docs">API docs ↗</a></div>
+    <div id="notice" role="status" aria-live="polite" hidden></div>
+    <section class="page-heading"><div><p class="eyebrow">LESS MATH. MORE MEMORIES.</p><h1 id="group-title">Your next trip, shared fairly.</h1><p id="group-subtitle">Real expenses. Clear balances. A simpler way to settle up.</p></div><button id="add-expense" class="primary" disabled>+ Add expense</button></section>
+    <nav class="tabs" aria-label="Trip views"><button class="active" data-tab="overview" aria-current="page">Overview</button><button data-tab="expenses">Expenses</button><button data-tab="settle">Settle up</button><button data-tab="members">People</button></nav>
+    <div id="workspace" aria-busy="false"><p class="empty">Loading your trips…</p></div>
+    <footer>Built with FastAPI & PostgreSQL <span>Exact paise accounting · Actual API results</span></footer>
+  </main>
+  <dialog id="modal" aria-labelledby="modal-title"><div class="modal-head"><h2 id="modal-title"></h2><button id="close-modal" class="icon-button" aria-label="Close dialog">×</button></div><form id="modal-form"><div id="modal-fields"></div><p id="form-error" class="form-error" role="alert"></p><div class="modal-actions"><button type="button" id="cancel-modal">Cancel</button><button type="submit" id="save-modal" class="primary">Save</button></div></form></dialog>
+</body>
+</html>

@@ -170,6 +170,18 @@ Unit tests call domain helpers and input schemas. The tiny independent optimizer
 
 CI installs locked Python 3.12 dependencies, runs Ruff and the full suite against PostgreSQL, validates Compose, and builds Docker. Local results/limits are recorded in docs/verification.md; the public repository has a verified baseline CI run and subsequent pushes run the same checks. docs/verification.md links the current Actions status.
 
+## Browser UI and Render startup
+
+`create_app()` mounts module-relative `app/static` at `/static` and serves `index.html` at `/`. HTML loads CSS and deferred JavaScript; the existing Docker `COPY app` includes the assets. The UI route is excluded from financial OpenAPI.
+
+`app.js`: `loadGroups()` -> `all('/groups')` (paginated fetches) -> `selectGroup()` -> save group ID in URL -> `refresh()` -> load members -> current view (`overview`, `expenses`, `settlements`, `membersView`). Request counters stop stale group/search responses overwriting newer state. `api()` performs same-origin JSON requests and translates backend errors; `esc()` escapes rendered user content. `money()` formats decimal strings; `magnitude()` removes a negative sign without a binary-float conversion.
+
+`overview()` concurrently fetches group analytics, selected-member analytics and lifetime net balances, then renders their actual values. Date filters affect reports only. `expenses()` fetches filtered/paginated history -> `expenseRows()` renders saved rows/category controls. `settlements()` fetches a fresh plan plus paginated payment history. `membersView()` renders current memberships. All financial math stays in the existing backend services/domain functions.
+
+`openModal()` -> form submit listener -> callback with FormData -> API call -> close/refresh, or retain form and show validation error. Save/cancel controls are disabled during submission. `expenseModal()` sends equal mode or all current member custom amounts as decimal strings. Split detail reads the saved expense. `addMemberModal()` creates/selects a user -> PUT membership. `sampleTrip()` sequentially creates users/group/members and three expenses, then selects the new group. Partial creation is explained; no shared data is deleted. Payment controls capture group/mode/participants -> optionally smaller amount -> settlement POST for fresh backend validation. Category controls PATCH the expense. Search debounces API calls, opens matching groups in the UI, and links other results to API output/docs.
+
+`render.yaml` wires the internal database URI and overrides the service command with `python -m scripts.start_render`. `main()` -> Alembic upgrade head -> idempotent `seed()` -> `uvicorn.run(app.main:app, host=0.0.0.0, port=PORT)`. `Settings.use_psycopg_driver()` parses/normalizes hosted PostgreSQL URLs, preserving credentials and query parameters. Local Compose keeps its existing migration service and Docker command. See `docs/render.md` for deployment and recruiter review steps.
+
 ## Submission documentation
 
 `output/pdf/` contains separate setup, API and database-schema guides stamped with the source code revision, API version and migration head. Endpoint parameters/response models come from `app.openapi()`; table columns/constraints/indexes come from `Base.metadata`. Authored sections explain accounting, validation and transaction behavior around those generated references. These static artifacts do not run in the application's request path.

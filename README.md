@@ -2,7 +2,19 @@
 
 FastAPI expense-sharing backend with exact monetary accounting, searchable history, explainable spending analytics, and bounded optimal settlement suggestions.
 
-**Status: implemented and verified.** The expanded PostgreSQL suite passes **83 tests**, including audit regressions, migration safety, and concurrent snapshot reporting. Docker build/startup and the live assignment scenario pass. The public repository is [expense-sharing-app](https://github.com/manansethi1205/expense-sharing-app); its name and description match the submission. [GitHub Actions](https://github.com/manansethi1205/expense-sharing-app/actions) runs the full checks on every push. See [verification details](docs/verification.md).
+**Status: implemented and verified.** The current PostgreSQL suite passes **87 tests**, including audit regressions, migration safety, and concurrent snapshot reporting. Docker build/startup and the live assignment scenario pass. The public repository is [expense-sharing-app](https://github.com/manansethi1205/expense-sharing-app); its name and description match the submission. [GitHub Actions](https://github.com/manansethi1205/expense-sharing-app/actions) runs the full checks on every push. See [verification details](docs/verification.md).
+
+## Try the UI and deploy
+
+Open the dashboard at `/` after starting the API. Seed with `docker compose exec api python -m scripts.seed_demo` for immediate results. **Create a fresh demo trip** creates a separate scenario without resetting another reviewer's changes.
+
+The responsive UI supports equal/custom expenses, saved splits, category correction, spending analytics and date filters, balances, partial/full repayment recording, people and search. Every financial result comes from the real API. This is a shared synthetic demo without authentication.
+
+[Deploy the free demo to Render](https://render.com/deploy?repo=https://github.com/manansethi1205/expense-sharing-app) using the included Blueprint, or follow the [deployment guide](docs/render.md). **Free Render databases expire after 30 days; free web services can sleep.** A public URL is assigned after successful deployment; no hosted URL is claimed before verification.
+
+The expanded suite now passes **87 tests**, including hosting URL normalization and static-asset serving, in addition to the 83-test backend baseline. The UI was checked in a real browser, including custom splits, category correction, partial repayment, search and mobile layout.
+
+![Live UI with actual API results](docs/ui-preview.png)
 
 ## Assignment scope
 

@@ -55,3 +55,13 @@ The default threshold remains 16; configuration may lower it, never raise it abo
 - Coordinated report/writer test confirms REPEATABLE READ + READ ONLY, allows a concurrent expense write, and keeps all report totals on the earlier snapshot.
 - Migration 0002/model comparison and rollback-safe downgrade refusal pass; large recorded settlements are preserved.
 - The complete Postman collection's 21 HTTP requests run twice in an isolated schema with dynamic IDs. Pytest validates the requests/capture/status flow; the embedded JavaScript assertions are included for Postman, not evaluated as JavaScript by pytest.
+
+
+## UI and Render preparation - 2026-10-16
+
+- The expanded suite passed **87 tests** on the existing isolated local PostgreSQL setup (28.34 seconds). Ruff lint/format and Node JavaScript syntax checks passed.
+- The Render-style startup migrated, seeded and served UI/API successfully on localhost:8010. The native server binds to the configured PORT. No fresh Docker image build is claimed for this step because Docker Desktop is stopped; CI builds the image after publication.
+- In Brave, a fresh synthetic trip was created through the UI. A custom INR 1,000 expense saved exact shares 500/300/200; the split dialog confirmed them. A manual category correction persisted with source=manual. Feature search returned analytics documentation results.
+- A synthetic INR 300 partial repayment reduced Ankit's suggestion from INR 1,800 to INR 1,500 and appeared in payment history. Baseline seed trip remained unchanged.
+- At phone width, document scroll width equaled client width (375 pixels), with no page-level horizontal overflow. Viewport override was then reset. docs/ui-preview.png captures the real seeded overview.
+- Render Blueprint and provider behavior were checked against official Render documentation. Cloud deployment is pending Render account access; no public service URL is fabricated.
