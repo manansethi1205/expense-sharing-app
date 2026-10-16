@@ -4,6 +4,8 @@ FastAPI expense-sharing backend with exact monetary accounting, searchable histo
 
 **Final assignment submission - 16 October 2026.** Backend, UI, Docker support and the Render demo are implemented and verified. The suite passes **87 tests** (54 unit, 33 PostgreSQL integration). Application baseline: `72f1182`; API: `0.1.0`; schema head: `0002`. Application CI passed [this run](https://github.com/manansethi1205/expense-sharing-app/actions/runs/38897558178). Start with the [recruiter handoff](SUBMISSION.md) and [verification record](docs/verification.md).
 
+For assignment review: [Project setup steps](#project-setup-steps), [Architecture overview](#architecture-overview), [Database design explanation](#database-design-explanation), [Assumptions made](#assumptions-made), [Design decisions](#design-decisions), and [Improvements with more time](#improvements-with-more-time).
+
 ## Try the live application
 
 **[Live Render demo](https://expense-sharing-app-inda.onrender.com/)** · **[Hosted Swagger UI](https://expense-sharing-app-inda.onrender.com/docs)** · **[Public GitHub repository](https://github.com/manansethi1205/expense-sharing-app)**
@@ -72,7 +74,7 @@ PostgreSQL stores relationships using foreign keys and association tables. We ca
 
 SQLite is a valid fallback if zero-service startup matters more than concurrent settlement handling. It is not a second supported backend in the initial plan: supporting and testing two databases spends time without helping this assignment. If selected instead, enable foreign keys on every connection and revisit write concurrency; see [SQLite foreign key documentation](https://www.sqlite.org/foreignkeys.html). PostgreSQL is the recommendation for Docker-based evaluation.
 
-## Architecture
+## Architecture overview
 
 One application, one database, and four straightforward layers:
 
@@ -88,7 +90,7 @@ Ordinary synchronous route functions call synchronous database operations. One s
 
 See [flow.md](flow.md) for actual modules, callers/callees, transaction boundaries, and error paths, and [decisions.md](decisions.md) for reasons and tradeoffs.
 
-## Database design
+## Database design explanation
 
 ```mermaid
 erDiagram
@@ -119,7 +121,7 @@ The sum of expense shares is a cross-row invariant: validate it in the service, 
 
 Balances are derived from expenses, saved shares, and settlements; do not maintain mutable balance rows that can drift from history.
 
-## Accounting rules and assumptions
+## Assumptions made
 
 1. Amounts must be positive, finite, and use at most two decimal places. Expenses remain capped at INR 10,000,000 each. Settlements may aggregate many expenses, so they have a separate signed-BIGINT ceiling: INR 92,233,720,368,547,758.07 (9,223,372,036,854,775,807 paise). Every suggested payment can therefore be recorded without imposing the per-expense cap or changing the minimum-payment objective. Zero custom shares are allowed. Stored and query text reject null characters with 422.
 2. Prefer decimal strings in JSON (`"1200.00"`). Accept the assignment's numeric JSON form through Decimal validation, without float arithmetic. Convert to integer paise once at the boundary; return monetary strings consistently.
@@ -131,6 +133,23 @@ Balances are derived from expenses, saved shares, and settlements; do not mainta
 8. New members participate in future expenses only. No retroactive custom participants, member removal, currency conversion, or partial expense updates in this version. Backdated events use membership at recording time, not reconstructed historical membership.
 9. Expenses and settlements are financially immutable. Category correction is allowed because it does not change accounting. Reversal/correction records can be added later.
 10. The demo has no authentication: user IDs are identifiers, not proof of identity. APIs operate on synthetic assignment data. A future authenticated version must enforce group access consistently, including search and analytics.
+
+## Design decisions
+
+These choices prioritize correct accounting, a reviewable implementation, and a short assignment timeline. The [decision register](decisions.md) records the detailed alternatives, dependency choices, tradeoffs, and subsequent revisions.
+
+| Decision | Why it fits this assignment | Tradeoff |
+| --- | --- | --- |
+| FastAPI with synchronous SQLAlchemy services | Uses a familiar framework, typed contracts and generated API documentation; services make transaction boundaries explicit. | Database calls occupy worker threads; larger concurrency requirements would need measurement before changing the execution model. |
+| One PostgreSQL database | Foreign keys, transactions, row locks and SQL aggregation support membership, history and reporting together. | Requires a running database; graph traversal and a second database are unnecessary for the required queries. |
+| Integer paise and saved expense shares | Conserves every paisa and preserves history when membership changes; the payer's own share remains available for analytics. | Equal division needs a deterministic remainder rule; saved shares require additional rows. |
+| Derived balances and immutable financial records | Expenses, shares and repayments remain the auditable source of truth. | Reads aggregate history, and financial corrections need a future reversal workflow. |
+| Group-level locks on financial writes | Prevents concurrent repayments or membership changes from validating against stale state. | Writes within one group are serialized, acceptable for small trip groups. |
+| Exact settlement optimization up to 16 nonzero positions, then greedy | Gives small groups a minimum-payment plan while bounding exponential computation. | Larger groups receive valid suggestions without a minimum-count guarantee; the API exposes that distinction. |
+| Parameterized substring search and rule-based categories | Search covers groups, expenses and feature discovery; category suggestions are explainable and manually correctable. | No fuzzy ranking or learned classification; ambiguous descriptions may need correction. |
+| SQL snapshot analytics | Separates money paid, consumption and repayment cash flow while keeping each report internally consistent. | Long-running reports and large offset pages still need measured tuning. |
+| Plain JavaScript UI served by FastAPI | Provides an interactive recruiter demo using the actual backend with one build and deployment. | Manual DOM/state management becomes harder as the frontend grows. |
+| Free Render demo with managed PostgreSQL | Makes the assignment accessible through a shared link without local setup. | Cold starts, database expiration and shared synthetic data limit availability; authentication is deferred. |
 
 ## Balances and settlements
 
@@ -305,7 +324,7 @@ Reports return totals, labelled category/group/member breakdowns, monthly series
 - Analytics distinguish paid/share/cash flow, avoid duplicate sums, and handle date boundaries/empty periods.
 - Integration tests use isolated PostgreSQL state, apply migrations, and exercise API responses and constraints; pure math tests need no database.
 
-## Setup
+## Project setup steps
 
 ### Docker
 
@@ -376,10 +395,16 @@ The benchmark writes an ignored `benchmark-results.json`. The verified sample at
 
 Public submission: [manansethi1205/expense-sharing-app](https://github.com/manansethi1205/expense-sharing-app). Repository description: **FastAPI expense-sharing backend with exact split accounting, searchable expenses, spending analytics, and smart settlement suggestions.** The submission is published with the requested repository name.
 
-## Tradeoffs and future work
+## Improvements with more time
 
-Quick follow-ups: CSV export, advisory duplicate-expense warnings, and group budgets. GitHub CI for lint/tests and Docker build is already included. Idempotent expense/settlement POSTs remain deferred: they need payload-bound keys, persistent storage, and concurrency tests rather than just a header.
+The next work would be prioritized as follows:
+
+1. **Protect real user data:** add authentication and group authorization across every API, including search and analytics. Move beyond the expiring demo database and establish backup/restore checks before relying on the hosted service for ongoing use.
+2. **Make retries and corrections reliable:** persist payload-bound idempotency keys for expense/settlement creation, test concurrent retries, and add linked reversal records so mistakes can be corrected without rewriting history.
+3. **Add inexpensive product value:** CSV export, advisory duplicate-expense warnings, and group budgets would help users review and manage trip spending with limited new infrastructure.
+4. **Scale from measurements:** add cursor pagination, search indexes or fuzzy ranking, and report statement timeouts when observed workloads justify them. Improve category rules using actual correction examples.
+5. **Expand the collaboration model:** define membership departure rules, then consider receipt attachments and notifications. Multiple currencies, bank integrations, OCR and exact optimization above the bounded threshold need separate scope and validation.
 
 Analytics now use SQL sums/grouping and bounded drill-down queries inside a dedicated read-only REPEATABLE READ transaction. Reports see one consistent MVCC snapshot without holding group row locks or materializing the whole expense history in application memory. Very large offset pagination and long-running reports can still benefit from cursors, statement timeouts, and measured tuning. Search remains bounded and parameterized substring matching without fuzzy search.
 
-With more time: financial reversal records, authentication/group authorization, idempotency, fuzzy search, membership departure rules, receipt attachments, budgets, richer category context, and measured performance improvements. Notifications, bank integrations, OCR, multiple currencies, and exact optimization above the bounded small-group threshold are outside the initial assignment scope.
+GitHub CI already checks lint, formatting, the full test suite and the Docker build. The items above are future work, not requirements claimed as implemented.
