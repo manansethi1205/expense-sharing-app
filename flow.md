@@ -182,6 +182,8 @@ CI installs locked Python 3.12 dependencies, runs Ruff and the full suite agains
 
 `render.yaml` wires the internal database URI and overrides the service command with `python -m scripts.start_render`. `main()` -> Alembic upgrade head -> idempotent `seed()` -> `uvicorn.run(app.main:app, host=0.0.0.0, port=PORT)`. `Settings.use_psycopg_driver()` parses/normalizes hosted PostgreSQL URLs, preserving credentials and query parameters. Local Compose keeps its existing migration service and Docker command. See `docs/render.md` for deployment and recruiter review steps.
 
+The manually created Render service needed those settings applied in its dashboard: saving the Docker Command triggered a deployment, migrations created the missing tables, and idempotent seeding populated the trip. Its Health Check Path is now `/health/ready`. The browser's `api()` catches JSON parsing failures before processing structured errors: plain/HTML failure bodies show a safe HTTP-status message, while malformed successful responses show an unexpected-response message. Existing JSON validation details remain available. Initial load failures no longer assume the service is asleep.
+
 ## Submission documentation
 
 `output/pdf/` contains separate setup, API and database-schema guides stamped with the source code revision, API version and migration head. Endpoint parameters/response models come from `app.openapi()`; table columns/constraints/indexes come from `Base.metadata`. Authored sections explain accounting, validation and transaction behavior around those generated references. These static artifacts do not run in the application's request path.

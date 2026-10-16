@@ -1,5 +1,7 @@
 # Recruiter demo on Render
 
+**Verified live URL:** https://expense-sharing-app-inda.onrender.com/ (2026-10-16). The manually created service initially connected to an empty database; logs reported `relation "groups" does not exist`. Setting its Docker Command to `python -m scripts.start_render` ran migrations and seeded the trip. Health Check Path is `/health/ready`. A successful connectivity check alone does not prove tables exist.
+
 The UI is served at `/` by FastAPI. It calls the same `/api/v1` endpoints documented in Swagger; it has no separate balance calculator or mock financial results. CSS and JavaScript are bundled in `app/static/`, with no Node build or CDN dependency.
 
 ## Deploy the free demo

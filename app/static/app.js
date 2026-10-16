@@ -11,7 +11,16 @@ let modalSave, searchTimer, searchVersion = 0;
 
 async function api(path, method="GET", body) {
   const response = await fetch(`/api/v1${path}`, {method,headers:body ? {"Content-Type":"application/json"} : {},body:body ? JSON.stringify(body) : undefined});
-  const data = await response.json();
+  let data;
+  try {
+    data = await response.json();
+  } catch {
+    // Render/proxies and unhandled server failures can return plain text or HTML.
+    if (!response.ok) {
+      throw new Error(`The service couldn't load your data (HTTP ${response.status}). Please try again shortly.`);
+    }
+    throw new Error("The service returned an unexpected response. Please reload and try again.");
+  }
   if (!response.ok) {
     const details = data.error?.details?.map(d => `${d.location?.join(".")}: ${d.message}`).join("; ");
     throw new Error(details || data.error?.message || `Request failed (${response.status})`);
@@ -176,4 +185,4 @@ $("#search").addEventListener("input",()=>{clearTimeout(searchTimer);const versi
   }).join("")||empty("No results. Try ‘dinner’, ‘Goa’ or ‘analytics’.");$("#search-results").hidden=false;}catch(error){if(version===searchVersion){$("#search-results").innerHTML=empty(error.message);$("#search-results").hidden=false;}}},300);});
 document.addEventListener("click",event=>{if(!event.target.closest(".search-wrap"))$("#search-results").hidden=true;});
 $("#search").addEventListener("keydown",event=>{if(event.key==="Escape")$("#search-results").hidden=true;});
-loadGroups().catch(error=>{notice(error.message,true);$("#workspace").innerHTML=empty("Could not reach the API. Wait for the service to wake up, then reload this page.");});
+loadGroups().catch(error=>{notice(error.message,true);$("#workspace").innerHTML=empty("Your data could not be loaded. Please reload this page to try again.");});

@@ -6,6 +6,8 @@ FastAPI expense-sharing backend with exact monetary accounting, searchable histo
 
 ## Try the UI and deploy
 
+**Live recruiter demo:** https://expense-sharing-app-inda.onrender.com/ (synthetic shared data). Its group history, INR 4,800 seeded analytics and settlement suggestions were verified after applying migrations on 2026-10-16. Free-tier sleep and database expiration still apply.
+
 Open the dashboard at `/` after starting the API. Seed with `docker compose exec api python -m scripts.seed_demo` for immediate results. **Create a fresh demo trip** creates a separate scenario without resetting another reviewer's changes.
 
 The responsive UI supports equal/custom expenses, saved splits, category correction, spending analytics and date filters, balances, partial/full repayment recording, people and search. Every financial result comes from the real API. This is a shared synthetic demo without authentication.

@@ -65,3 +65,11 @@ The default threshold remains 16; configuration may lower it, never raise it abo
 - A synthetic INR 300 partial repayment reduced Ankit's suggestion from INR 1,800 to INR 1,500 and appeared in payment history. Baseline seed trip remained unchanged.
 - At phone width, document scroll width equaled client width (375 pixels), with no page-level horizontal overflow. Viewport override was then reset. docs/ui-preview.png captures the real seeded overview.
 - Render Blueprint and provider behavior were checked against official Render documentation. Cloud deployment is pending Render account access; no public service URL is fabricated.
+
+
+## Live Render repair - 2026-10-16
+
+- Public health/live and health/ready returned 200, but groups returned 500. Render logs confirmed psycopg UndefinedTable: relation groups does not exist. The manually created service had an empty Docker Command, so it skipped migrations and seeding.
+- Set Docker Command to python -m scripts.start_render and Health Check Path to /health/ready in the existing service. No database URL, credentials, plan or region was changed. The command update triggered a successful deployment.
+- Public groups, analytics and settlement-suggestions endpoints returned 200 afterward. The seeded group has three members, spending 4800.00 and two suggested transfers. Public URL: https://expense-sharing-app-inda.onrender.com/.
+- Browser error handling now preserves JSON validation errors and gracefully handles non-JSON 500/502 responses instead of showing a JSON parse exception. Five focused Node response checks and the JavaScript syntax check passed.
